@@ -1,0 +1,75 @@
+services:
+    maxapi-server:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        ports:
+            - '${MAXAPI_PORT:-8080}:8080'
+        environment:
+            - MAXAPI_ADMIN_TOKEN=${MAXAPI_ADMIN_TOKEN}
+            - DB_USER=${DB_USER:-maxapi}
+            - DB_PASSWORD=${DB_PASSWORD:-maxapi}
+            - DB_NAME=${DB_NAME:-maxapi}
+            - DB_HOST=db
+            - DB_PORT=${DB_PORT:-5432}
+            - TZ=${TZ:-America/Sao_Paulo}
+            - MAXAPI_WEBHOOK_FORMAT=${MAXAPI_WEBHOOK_FORMAT:-json}
+            - MAXAPI_SESSION_DEVICE_NAME=${MAXAPI_SESSION_DEVICE_NAME:-MaxAPI}
+            # RabbitMQ configuration Optional
+            - RABBITMQ_URL=amqp://maxapi:maxapi@rabbitmq:5672/
+            - RABBITMQ_QUEUE=max_events
+        depends_on:
+            db:
+                condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
+        networks:
+            - maxapi-network
+        restart: on-failure
+
+    db:
+        image: postgres:16
+        environment:
+            POSTGRES_USER: ${DB_USER:-maxapi}
+            POSTGRES_PASSWORD: ${DB_PASSWORD:-maxapi}
+            POSTGRES_DB: ${DB_NAME:-maxapi}
+        # ports:
+        #   - "${DB_PORT:-5432}:5432" # Uncomment to access the database directly from your host machine.
+        volumes:
+            - db_data:/var/lib/postgresql/data
+        networks:
+            - maxapi-network
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-maxapi}']
+            interval: 5s
+            timeout: 5s
+            retries: 5
+        restart: always
+
+    rabbitmq:
+        image: rabbitmq:3-management
+        environment:
+            RABBITMQ_DEFAULT_USER: maxapi
+            RABBITMQ_DEFAULT_PASS: maxapi
+            RABBITMQ_DEFAULT_VHOST: /
+        ports:
+            - '5672:5672' # AMQP port
+            - '15672:15672' # Management UI port
+        volumes:
+            - rabbitmq_data:/var/lib/rabbitmq
+        networks:
+            - maxapi-network
+        healthcheck:
+            test: ['CMD', 'rabbitmq-diagnostics', 'ping']
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        restart: always
+
+networks:
+    maxapi-network:
+        driver: bridge
+
+volumes:
+    db_data:
+    rabbitmq_data:

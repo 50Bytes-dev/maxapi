@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MaxAPI</title>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fomantic-ui@2.9.4/dist/semantic.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/fomantic-ui@2.9.4/dist/semantic.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="px-4 py-4">
+  <div class="ui container">
+
+    <div class="main-header">
+      <h1 class="ui header center aligned">
+        <span class="title-container">
+          <i class="comment alternate icon"></i> Welcome to MaxAPI
+        </span>
+      </h1>
+    </div>
+
+    <div class="ui segment hidden" id="connectstatus"></div>
+
+    <div class="ui horizontal divider"> Session </div>
+    <div class="ui three column stackable grid cards">
+      <div class="green card" style="cursor: pointer;" id="authWidget">
+        <div class="content"><a class="ui teal right ribbon label">Session</a>
+          <div class="header">Authenticate</div>
+          <div class="description"> Enter or change authentication token. </div>
+        </div>
+      </div>
+ 
+      <div class="green card hidden" style="cursor: pointer;" id="loginSMS">
+        <div class="content"><a class="ui teal right ribbon label">Session</a>
+          <div class="header">Login with SMS Code</div>
+          <div class="description"> Enter your phone number to receive a verification code.</div>
+        </div>
+      </div>
+      <div class="green card hidden" style="cursor: pointer;" id="logoutWidget">
+        <div class="content"><a class="ui teal right ribbon label">Session</a>
+          <div class="header">Logout</div>
+          <div class="description">Closes connection to MAX servers and terminate session.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ui horizontal divider widget"> Webhook </div>
+    <div class="ui three column stackable grid cards">
+      <div class="green card hidden widget" style="cursor: pointer;" id="setWebhook">
+        <div class="content"><a class="ui green right ribbon label">Webhook</a>
+          <div class="header">Set Webhook</div>
+          <div class="description"> Sets the webhook to call when an event/message is received.</div>
+        </div>
+      </div>
+      <div class="green card hidden widget" style="cursor: pointer;" id="getWebhook">
+        <div class="content"><a class="ui green right ribbon label">Webhook</a>
+          <div class="header">Get Webhook</div>
+          <div class="description"> Gets the currently configured webhook.</div>
+        </div>
+      </div>
+      <div class="green card hidden widget" style="cursor: pointer;" id="deleteWebhook">
+        <div class="content"><a class="ui green right ribbon label">Webhook</a>
+          <div class="header">Delete Webhook</div>
+          <div class="description"> Deletes the current webhook.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ui horizontal divider widget"> Chat </div>
+    <div class="ui three column stackable grid cards">
+      <div class="blue card hidden widget" style="cursor: pointer;" id="sendTextMessage">
+        <div class="content"><a class="ui blue right ribbon label">Chat</a>
+          <div class="header">Send Text Message</div>
+          <div class="description"> Sends a text message.</div>
+        </div>
+      </div>
+      <div class="blue card hidden widget" style="cursor: pointer;" id="deleteMessage">
+        <div class="content"><a class="ui blue right ribbon label">Chat</a>
+          <div class="header">Delete Message</div>
+          <div class="description"> Deletes your sent message.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ui horizontal divider widget"> User </div>
+    <div class="ui three column stackable grid cards">
+      <div class="red card hidden widget" style="cursor: pointer;" id="userInfo">
+        <div class="content"><a class="ui red right ribbon label">User</a>
+          <div class="header">User Info</div>
+          <div class="description"> Search users by phone number.</div>
+        </div>
+      </div>
+      <div class="red card hidden widget" style="cursor: pointer;" id="userAvatar">
+        <div class="content"><a class="ui red right ribbon label">User</a>
+          <div class="header">User Avatar</div>
+          <div class="description"> Get user Avatar by phone number.</div>
+        </div>
+      </div>
+      <div class="red card hidden widget" style="cursor: pointer;" id="userContacts">
+        <div class="content"><a class="ui red right ribbon label">User</a>
+          <div class="header">Get Contacts</div>
+          <div class="description"> Get all contacts.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Session Modals -->
+    <div class="ui modal" id="modalAuthenticate"><i class="close icon"></i>
+      <div class="header"> Enter Authentication Token </div>
+      <div class="content">
+        <div class="ui info danger hidden" id="invalidCredentials">
+          <div class="ui icon message">
+            <i class="exclamation triangle icon"></i>
+            <div class="content">
+              <div class="header" id="incorrectstatus">
+                Invalid Token
+              </div>
+            </div>
+          </div>
+        <hr>
+        </div>
+        <div class="ui form">
+          <div class="field"><label>Token</label><input id='authtoken' type="text" placeholder="Authentication Token"><small>Press Enter to submit</small></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SMS Login Modal -->
+    <div class="ui modal" id="modalLoginSMS"><i class="close icon"></i>
+      <div class="header"> Login with SMS Verification </div>
+      <div class="content">
+        <div class="ui message info">
+          <div class="header" id="smsInfo">How to login?</div>
+          <ol id="smsHelp">
+            <li>Enter your phone number with country code (e.g., 79001234567)</li>
+            <li>You will receive an SMS with a verification code</li>
+            <li>Enter the code to complete login</li>
+          </ol>
+        </div>
+        
+        <!-- Step 1: Phone Number -->
+        <div class="ui form" id="phoneStep">
+          <div class="field">
+            <label>Phone Number</label>
+            <input id="smsPhoneInput" type="text" placeholder="Enter phone number (e.g., 79001234567)">
+            <small>Enter your phone number without + sign</small>
+          </div>
+          <button class="ui primary button" id="requestCodeBtn">
+            <i class="mobile icon"></i> Request SMS Code
+          </button>
+        </div>
+        
+        <!-- Step 2: Verification Code -->
+        <div class="ui form hidden" id="codeStep">
+          <div class="field">
+            <label>Verification Code</label>
+            <input id="smsCodeInput" type="text" placeholder="Enter the code from SMS">
+            <small>Enter the 6-digit code you received</small>
+          </div>
+          <button class="ui primary button" id="confirmCodeBtn">
+            <i class="check icon"></i> Confirm Code
+          </button>
+          <button class="ui secondary button" id="backToPhoneBtn">
+            <i class="arrow left icon"></i> Back
+          </button>
+        </div>
+        
+        <!-- Step 3: Registration (for new users) -->
+        <div class="ui form hidden" id="registerStep">
+          <div class="ui info message">
+            <p>This phone number is not registered. Please provide your name to complete registration.</p>
+          </div>
+          <div class="field">
+            <label>First Name</label>
+            <input id="regFirstName" type="text" placeholder="Enter your first name">
+          </div>
+          <div class="field">
+            <label>Last Name (optional)</label>
+            <input id="regLastName" type="text" placeholder="Enter your last name">
+          </div>
+          <button class="ui primary button" id="registerBtn">
+            <i class="user plus icon"></i> Complete Registration
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Webhook Modals -->
+    <div class="ui modal" id="modalGetWebhook"><i class="close icon"></i>
+      <div class="header"> Webhook </div>
+      <div class="content">
+        <div class="ui message info hidden"></div>
+        URL:
+        <div class="ui message info" id="getWebhookContainer"></div>
+        Events:
+        <div class="ui message info" id="getWebhookContainerEvents"></div>
+      </div>
+      <div class="actions">
+        <div class="ui cancel button">Close</div>
+      </div>
+    </div>
+
+    <div class="ui modal" id="modalSetWebhook"><i class="close icon"></i>
+      <div class="header"> Webhook </div>
+      <div class="content">
+        <div class="ui form">
+          <div class="field">
+            <label>Webhook Events</label>
+            <select id="webhookEvents" class="ui fluid dropdown" multiple="">
+              <option value="">Select Events</option>
+              <option value="Message">Message</option>
+              <option value="MessageEdit">Message Edit</option>
+              <option value="MessageDelete">Message Delete</option>
+              <option value="ReadReceipt">Read Receipt</option>
+              <option value="Connected">Connected</option>
+              <option value="Disconnected">Disconnected</option>
+              <option value="ChatUpdate">Chat Update</option>
+              <option value="Typing">Typing</option>
+              <option value="ReactionChange">Reaction Change</option>
+              <option value="ContactUpdate">Contact Update</option>
+              <option value="PresenceUpdate">Presence Update</option>
+              <option value="FileReady">File Ready</option>
+              <option value="All">All</option>
+            </select>
+          </div>
+          <div class="field"><label>Webhook URL</label><input id="webhookinput" type="text" placeholder="Type webhook URL"></div>
+        </div>
+      <br>
+      <br>
+      <br>
+      <br>
+      <br>
+      </div>
+      <div class="actions">
+        <div class="ui cancel button">Close</div>
+        <div class="ui positive right labeled icon button">Set<i class="checkmark icon"></i></div>
+      </div>
+    </div>
+
+    <div class="ui modal" id="modalDeleteWebhook"><i class="close icon"></i>
+      <div class="header"> Delete Webhook </div>
+      <div class="content">
+          Are you sure?
+      </div>
+      <div class="actions">
+        <div class="ui negative button">No</div>
+        <div class="ui positive right labeled icon button">Yes</div>
+      </div>
+    </div>
+
+
+    <!-- User Modals -->
+
+    <div class="ui modal" id="modalUserInfo"><i class="close icon"></i>
+      <div class="header"> User Info </div>
+      <div class="content">
+        <div class="ui message info hidden" id="userInfoContainer"></div>
+        <div class="ui form">
+          <div class="field"><label>Phone</label><input id="userinfoinput" type="text" placeholder="Type phone number"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="ui cancel button">Close</div>
+        <div class="ui positive right labeled icon button">Get Info<i class="checkmark icon"></i></div>
+      </div>
+    </div>
+
+    <div class="ui modal" id="modalUserAvatar"><i class="close icon"></i>
+      <div class="header"> User Avatar </div>
+      <div class="content">
+        <div class="ui message info hidden" id="userAvatarContainer"></div>
+        <div class="ui form">
+          <div class="field"><label>Phone</label><input id="useravatarinput" type="text" placeholder="Type phone number"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="ui cancel button">Close</div>
+        <div class="ui positive right labeled icon button">Get Info<i class="checkmark icon"></i></div>
+      </div>
+    </div>
+
+    <!-- Message Modals -->
+
+    <div class="ui modal" id="modalSendTextMessage"><i class="close icon"></i>
+      <div class="header"> Send Text Message </div>
+      <div class="content">
+        <div class="ui message info hidden" id="sendMessageContainer"></div>
+        <div class="ui form">
+          <div class="field"><label>Phone</label><input id="messagesendphone" type="text" placeholder="Type phone number"></div>
+          <div class="field"><label>Message</label><textarea id="messagesendtext"></textarea></div>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="ui cancel button">Close</div>
+        <div class="ui positive right labeled icon button">Send<i class="checkmark icon"></i></div>
+      </div>
+    </div>
+
+     <div class="ui modal" id="modalDeleteMessage"><i class="close icon"></i>
+      <div class="header"> Delete Message </div>
+      <div class="content">
+        <div class="ui message info hidden" id="deleteMessageContainer"></div>
+        <div class="ui form">
+          <div class="field"><label>Phone</label><input id="messagedeletephone" type="text" placeholder="Type phone number"></div>
+          <div class="field"><label>Message ID</label><input id="messagedeleteid" type="text" placeholder="Type the message id"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="ui cancel button">Close</div>
+        <div class="ui positive right labeled icon button">Delete<i class="trash icon"></i></div>
+      </div>
+    </div>
+
+   
+  </div>
+<script>
+
+  let baseUrl = window.location.origin;
+  let loggedIn = false;
+  let tempToken = '';
+
+  async function wait(time) {
+    return new Promise(resolve => {
+      setTimeout(() => {
+        resolve();
+      }, time);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+
+    hideWidgets();
+
+    const authTokenInput = document.getElementById('authtoken');
+    authTokenInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        const token = authTokenInput.value.trim();
+        if (token) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('token', token);
+          window.location.href = url.toString();
+        }
+      }
+    });
+
+    // SMS Login handlers
+    document.getElementById('requestCodeBtn').addEventListener('click', function() {
+      const phone = document.getElementById('smsPhoneInput').value.trim();
+      if (phone) {
+        requestSMSCode(phone);
+      }
+    });
+
+    document.getElementById('confirmCodeBtn').addEventListener('click', function() {
+      const code = document.getElementById('smsCodeInput').value.trim();
+      if (code) {
+        confirmSMSCode(code);
+      }
+    });
+
+    document.getElementById('backToPhoneBtn').addEventListener('click', function() {
+      document.getElementById('phoneStep').classList.remove('hidden');
+      document.getElementById('codeStep').classList.add('hidden');
+      document.getElementById('registerStep').classList.add('hidden');
+    });
+
+    document.getElementById('registerBtn').addEventListener('click', function() {
+      const firstName = document.getElementById('regFirstName').value.trim();
+      const lastName = document.getElementById('regLastName').value.trim();
+      if (firstName) {
+        completeRegistration(firstName, lastName);
+      }
+    });
+
+    const userInfoInput = document.getElementById('userinfoinput');
+    userInfoInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        doUserInfo();
+      }
+    });
+ 
+    const userAvatarInput = document.getElementById('useravatarinput');
+    userAvatarInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        doUserAvatar();
+      }
+    });
+ 
+    document.getElementById('logoutWidget').addEventListener('click', function() {
+      logout().then(function() { window.location.reload();});
+    });
+
+    document.getElementById('loginSMS').addEventListener('click', function() {
+      $('#modalLoginSMS').modal({
+        onVisible: function() {
+          document.getElementById('phoneStep').classList.remove('hidden');
+          document.getElementById('codeStep').classList.add('hidden');
+          document.getElementById('registerStep').classList.add('hidden');
+        },
+        onHidden: function() {
+          if(loggedIn==true) {
+              document.getElementById('loginSMS').classList.add('hidden');
+              document.getElementById('logoutWidget').classList.remove('hidden');
+          }
+        }
+      }).modal('show');
+    });
+
+    document.getElementById('authWidget').addEventListener('click', function() {
+      $('#modalAuthenticate').modal({closable:false}).modal('show');
+    });
+  
+    document.getElementById('userInfo').addEventListener('click', function() {
+      document.getElementById('userInfoContainer').innerHTML='';
+      document.getElementById("userInfoContainer").classList.add('hidden');
+      $('#modalUserInfo').modal({onApprove: function() {
+        doUserInfo();
+        return false;
+      }}).modal('show');
+    });
+  
+    document.getElementById('userAvatar').addEventListener('click', function() {
+      document.getElementById('userAvatarContainer').innerHTML='';
+      document.getElementById("userAvatarContainer").classList.add('hidden');
+      $('#modalUserAvatar').modal({onApprove: function() {
+        doUserAvatar();
+        return false;
+      }}).modal('show');
+    });
+ 
+    document.getElementById('sendTextMessage').addEventListener('click', function() {
+      document.getElementById('sendMessageContainer').innerHTML='';
+      document.getElementById("sendMessageContainer").classList.add('hidden');
+      $('#modalSendTextMessage').modal({onApprove: function() {
+        sendTextMessage().then((result)=>{
+          document.getElementById("sendMessageContainer").classList.remove('hidden');
+          if(result.success===true) {
+             document.getElementById('sendMessageContainer').innerHTML=`Message sent successfully. Id: ${result.data.Id}`
+          } else {
+             document.getElementById('sendMessageContainer').innerHTML=`Problem sending message: ${result.error}`
+          }
+        });
+        return false;
+      }}).modal('show');
+    });
+ 
+    document.getElementById('deleteMessage').addEventListener('click', function() {
+      document.getElementById('deleteMessageContainer').innerHTML='';
+      document.getElementById("deleteMessageContainer").classList.add('hidden');
+      $('#modalDeleteMessage').modal({onApprove: function() {
+        deleteMessage().then((result)=>{
+          console.log(result);
+          document.getElementById("deleteMessageContainer").classList.remove('hidden');
+          if(result.success===true) {
+             document.getElementById('deleteMessageContainer').innerHTML=`Message deleted successfully.`
+          } else {
+             document.getElementById('deleteMessageContainer').innerHTML=`Problem deleting message: ${result.error}`
+          }
+        });
+        return false;
+      }}).modal('show');
+    });
+  
+    document.getElementById('userContacts').addEventListener('click', function() {
+      getContacts();
+    });
+
+    document.getElementById('getWebhook').addEventListener('click', function() {
+      getWebhook();
+    });
+
+    document.getElementById('deleteWebhook').addEventListener('click', function() {
+    $('#modalDeleteWebhook')
+      .modal({
+        closable: true,
+        onDeny: function(){
+          return true;
+        },
+        onApprove: function() {
+          deleteWebhook().then((response)=>{
+            if(response.success==true) {
+              $.toast({ class: 'success', message: `Webhook deleted successfully !` });
+            } else {
+              $.toast({ class: 'error', message: `could not delete webhook! ${response.error}` });
+            }
+          });
+        }
+      })
+      .modal('show');
+    });
+    document.getElementById('setWebhook').addEventListener('click', function() {
+      $('#modalSetWebhook').modal({onApprove: function() {
+        setWebhook().then((result)=>{
+          if(result.success===true) {
+             $.toast({ class: 'success', message: `Webhook set successfully !`});
+          } else {
+             $.toast({ class: 'error', message: `Problem setting webhook: ${result.error}`});
+          }
+        });
+        return true;
+      }}).modal('show');
+    });
+  });
+
+  // SMS Authentication Functions
+  async function requestSMSCode(phone) {
+    console.log("Requesting SMS code for:", phone);
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    
+    try {
+      const res = await fetch(baseUrl + "/session/auth/request", {
+        method: "POST",
+        headers: myHeaders,
+        body: JSON.stringify({phone: phone})
+      });
+      const data = await res.json();
+      
+      if(data.success) {
+        tempToken = data.data.temp_token || '';
+        document.getElementById('smsInfo').innerHTML = 'SMS code sent!';
+        document.getElementById('smsHelp').innerHTML = '<li>Check your phone for the verification code</li><li>Enter the code below</li>';
+        document.getElementById('phoneStep').classList.add('hidden');
+        document.getElementById('codeStep').classList.remove('hidden');
+        $.toast({ class: 'success', message: 'SMS code sent successfully!' });
+      } else {
+        $.toast({ class: 'error', message: 'Failed to send SMS: ' + (data.error || 'Unknown error') });
+      }
+    } catch(error) {
+      console.error('Error requesting SMS code:', error);
+      $.toast({ class: 'error', message: 'Error requesting SMS code' });
+    }
+  }
+
+  async function confirmSMSCode(code) {
+    console.log("Confirming SMS code:", code);
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    
+    try {
+      const res = await fetch(baseUrl + "/session/auth/confirm", {
+        method: "POST",
+        headers: myHeaders,
+        body: JSON.stringify({code: code, temp_token: tempToken})
+      });
+      const data = await res.json();
+      
+      if(data.success) {
+        if(data.data.needs_registration) {
+          // New user - show registration form
+          document.getElementById('codeStep').classList.add('hidden');
+          document.getElementById('registerStep').classList.remove('hidden');
+          $.toast({ class: 'info', message: 'Please complete registration' });
+        } else {
+          // Existing user - logged in
+          loggedIn = true;
+          document.getElementById("connectstatus").innerHTML = "Connected!";
+          document.getElementById("connectstatus").classList.remove('red');
+          document.getElementById("connectstatus").classList.add('green');
+          document.getElementById("connectstatus").classList.remove('hidden');
+          $('#modalLoginSMS').modal('hide');
+          showWidgets();
+          $.toast({ class: 'success', message: 'Logged in successfully!' });
+        }
+      } else {
+        $.toast({ class: 'error', message: 'Invalid code: ' + (data.error || 'Unknown error') });
+      }
+    } catch(error) {
+      console.error('Error confirming code:', error);
+      $.toast({ class: 'error', message: 'Error confirming code' });
+    }
+  }
+
+  async function completeRegistration(firstName, lastName) {
+    console.log("Completing registration:", firstName, lastName);
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    
+    try {
+      const res = await fetch(baseUrl + "/session/auth/register", {
+        method: "POST",
+        headers: myHeaders,
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName,
+          temp_token: tempToken
+        })
+      });
+      const data = await res.json();
+      
+      if(data.success) {
+        loggedIn = true;
+        document.getElementById("connectstatus").innerHTML = "Connected!";
+        document.getElementById("connectstatus").classList.remove('red');
+        document.getElementById("connectstatus").classList.add('green');
+        document.getElementById("connectstatus").classList.remove('hidden');
+        $('#modalLoginSMS').modal('hide');
+        showWidgets();
+        $.toast({ class: 'success', message: 'Registration completed successfully!' });
+      } else {
+        $.toast({ class: 'error', message: 'Registration failed: ' + (data.error || 'Unknown error') });
+      }
+    } catch(error) {
+      console.error('Error completing registration:', error);
+      $.toast({ class: 'error', message: 'Error completing registration' });
+    }
+  }
+
+  async function sendTextMessage() {
+    const sendPhone = document.getElementById('messagesendphone').value.trim();
+    const sendBody = document.getElementById('messagesendtext').value;
+    const myHeaders = new Headers();
+    const uuid = generateMessageUUID();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/chat/send/text", {
+      method: "POST",
+      headers: myHeaders,
+      body: JSON.stringify({Phone: sendPhone, Body: sendBody, Id: uuid})
+    });
+    data = await res.json();
+    return data;
+  }
+ 
+  async function deleteMessage() {
+    const deletePhone = document.getElementById('messagedeletephone').value.trim();
+    const deleteId = document.getElementById('messagedeleteid').value;
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/chat/delete", {
+      method: "POST",
+      headers: myHeaders,
+      body: JSON.stringify({Phone: deletePhone, Id: deleteId})
+    });
+    data = await res.json();
+    return data;
+  }
+ 
+  async function setWebhook() {
+    const webhook = document.getElementById('webhookinput').value.trim();
+    const events = $('#webhookEvents').dropdown('get value')
+    if (events.includes("All")) {
+      events.length = 0;
+      events.push("All");
+    }
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/webhook", {
+      method: "POST",
+      headers: myHeaders,
+      body: JSON.stringify({WebhookURL: webhook, events: events})
+    });
+    data = await res.json();
+    return data;
+  }
+ 
+  async function deleteWebhook() {
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/webhook", {
+      method: "DELETE",
+      headers: myHeaders
+    });
+    data = await res.json();
+    return data;
+  }
+ 
+  function doUserAvatar() {
+    const userAvatarInput = document.getElementById('useravatarinput');
+    let phone = userAvatarInput.value.trim();
+    if (phone) {
+      userAvatar(phone).then((data) => {
+        document.getElementById("userAvatarContainer").classList.remove('hidden');
+        if (data.success && data.data && data.data.url) {
+          const userAvatarDiv = document.getElementById('userAvatarContainer');
+          userAvatarDiv.innerHTML=`<img src="${data.data.url}" alt="Profile Picture" class="user-avatar">`;
+        } else {
+            document.getElementById('userAvatarContainer').innerHTML = 'No user avatar found';
+        }
+      }).catch(error => {
+        document.getElementById('userAvatarContainer').innerHTML = 'Error fetching user avatar';
+        console.error('Error:', error);
+      });
+    }
+  } 
+
+  function doUserInfo() {
+    const userInfoInput = document.getElementById('userinfoinput');
+    let phone = userInfoInput.value.trim();
+    if (phone) {
+      userInfo(phone).then((data) => {
+        document.getElementById("userInfoContainer").classList.remove('hidden');
+        if (data.success && data.data && data.data.Users) {
+            const userInfoDiv = document.getElementById('userInfoContainer');
+            userInfoDiv.innerHTML = '';
+            
+            for (const [userId, userData] of Object.entries(data.data.Users)) {
+                const userElement = document.createElement('div');
+                userElement.className = 'user-entry';
+                
+                userElement.innerHTML += `<strong>User ID: ${userId}</strong><br>`;
+                userElement.innerHTML += `Name: ${userData.Name || 'Not available'}<br>`;
+                userElement.innerHTML += `Phone: ${userData.Phone || 'Not available'}<br>`;
+                
+                userInfoDiv.appendChild(userElement);
+            }
+        } else {
+            document.getElementById('userInfoContainer').innerHTML = 'No user data found';
+        }
+      }).catch(error => {
+        document.getElementById('userInfoContainer').innerHTML = 'Error fetching user info';
+        console.error('Error:', error);
+      });
+    }
+  }
+
+  function showWidgets() {
+    document.querySelectorAll('.widget').forEach(widget => {
+      widget.classList.remove('hidden');
+    });
+  }
+
+  function hideWidgets() {
+    document.querySelectorAll('.widget').forEach(widget => {
+      widget.classList.add('hidden');
+    });
+  }
+
+  function checkStatus() {
+    console.log("checkStatus");
+    statusRequest().then((status) => {
+      if(status.success==true) {
+        if(status.data.LoggedIn === true) {
+          loggedIn = true;
+          document.getElementById("connectstatus").innerHTML = "Connected!";
+          document.getElementById("connectstatus").classList.remove('red');
+          document.getElementById("connectstatus").classList.add('green');
+          document.getElementById("connectstatus").classList.remove('hidden');
+          clearInterval(scanInterval);
+          showWidgets();
+          $('#modalLoginSMS').modal('hide');
+        }
+      } else {
+        clearInterval(scanInterval);
+      }
+    });
+  }
+
+  async function connect() {
+    console.log("Connecting...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/session/connect", {
+      method: "POST",
+      headers: myHeaders,
+      body: JSON.stringify({Events: 'All', Immediate: true})
+    });
+    data = await res.json();
+    return data;
+  }
+
+  async function disconnect() {
+    console.log("Disconnecting...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/session/disconnect", {
+      method: "POST",
+      headers: myHeaders,
+    });
+    data = await res.json();
+    return data;
+  }
+
+  async function status() {
+    console.log("Get status...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/session/status", {
+      method: "GET",
+      headers: myHeaders
+    });
+    data = await res.json();
+    return data;
+  }
+
+  async function getWebhook() {
+    console.log("Getting webhook...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    try {
+      const res = await fetch(baseUrl + "/webhook", {
+        method: "GET",
+        headers: myHeaders,
+      });
+      data = await res.json();
+      let webhook = '';
+      let events = '';
+      if (data.code === 200) {
+         webhook = data.data.webhook
+         events = data.data.subscribe.join(",")
+      } else {
+         webhook = `Problem getting webhook: ${error}`
+      }
+      $('#modalGetWebhook').modal('show');
+      document.getElementById('getWebhookContainer').innerHTML=webhook;
+      document.getElementById('getWebhookContainerEvents').innerHTML=events;
+    } catch (error) {
+      console.error("Error fetching webhook:", error);
+      throw error;
+    }
+  }
+
+  async function getContacts() {
+    console.log("Getting contacts...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    try {
+      const res = await fetch(baseUrl + "/user/contacts", {
+        method: "GET",
+        headers: myHeaders,
+      });
+      data = await res.json();
+      if (data.code === 200) {
+        const transformedContacts = Object.entries(data.data).map(([id, contact]) => ({
+            Name: contact.Name || "",
+            Phone: contact.Phone || "",
+            Id: id
+        }));
+        downloadJson(transformedContacts, 'contacts.json');
+        return transformedContacts;
+      } else {
+        throw new Error(`API returned code ${data.code}`);
+      }
+    } catch (error) {
+      console.error("Error fetching contacts:", error);
+      throw error;
+    }
+  }
+
+  async function userAvatar(phone) {
+    console.log("Requesting user avatar...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/user/avatar", {
+      method: "POST",
+      headers: myHeaders,
+      body: JSON.stringify({Phone: phone, Preview: false})
+    });
+    data = await res.json();
+    return data;
+  }
+ 
+  async function userInfo(phone) {
+    console.log("Requesting user info...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/user/info", {
+      method: "POST",
+      headers: myHeaders,
+      body: JSON.stringify({Phone: [phone]})
+    });
+    data = await res.json();
+    return data;
+  }
+
+  async function logout() {
+    console.log("Logging out...");
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    myHeaders.append('Content-Type', 'application/json');
+    res = await fetch(baseUrl + "/session/logout", {
+      method: "POST",
+      headers: myHeaders,
+    });
+    data = await res.json();
+    return data;
+  }
+
+  async function statusRequest() {
+    const myHeaders = new Headers();
+    myHeaders.append('token', token);
+    res = await fetch(baseUrl + "/session/status", {
+      method: "GET",
+      headers: myHeaders,
+    });
+    data = await res.json();
+    return data;
+  }
+
+  function parseURLParams(url) {
+    var queryStart = url.indexOf("?") + 1,
+        queryEnd   = url.indexOf("#") + 1 || url.length + 1,
+        query = url.slice(queryStart, queryEnd - 1),
+        pairs = query.replace(/\+/g, " ").split("&"),
+        parms = {}, i, n, v, nv;
+
+    if (query === url || query === "") return;
+      for (i = 0; i < pairs.length; i++) {
+        nv = pairs[i].split("=", 2);
+        n = decodeURIComponent(nv[0]);
+        v = decodeURIComponent(nv[1]);
+        if (!parms.hasOwnProperty(n)) parms[n] = [];
+        parms[n].push(nv.length === 2 ? v : null);
+    }
+    return parms;
+  }
+
+  function downloadJson(data, filename) {
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Cleanup
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 100);
+  }
+ 
+  function generateMessageUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+ 
+  // Starting
+  let notoken=0;
+  let token="";
+  let scanInterval;
+  let param = parseURLParams(window.location.href);
+
+  if(param!=undefined) {
+    if(param["token"]===undefined) {
+      notoken=1;
+    }
+  } else {
+    notoken=1;
+  }
+
+  if(notoken==1) {
+    document.getElementById("connectstatus").innerHTML = "No auth token specified";
+    $('#modalAuthenticate').modal({closable:false}).modal('show');
+  } else {
+
+    token = param["token"][0];
+
+    statusRequest().then((status) => {
+      if(status.success==true) {
+          if(status.data.LoggedIn === false) {
+              if(status.data.Connected === true) {
+                  // Already connected but not logged in - show SMS login
+                  document.getElementById('loginSMS').classList.remove('hidden');
+              } else {
+                  console.log("Not connected, attempting to connect.");
+                  connect().then((data) => {
+                    console.log("Connected:", data);
+                    document.getElementById('loginSMS').classList.remove('hidden');
+                  });
+              }
+          } else {
+              if(status.data.Connected === false) {
+                  connect().then((data) => {console.log("Connected:", data);});
+              }
+              document.getElementById("connectstatus").innerHTML = "Connected!";
+              document.getElementById("connectstatus").classList.remove('red');
+              document.getElementById("connectstatus").classList.add('green');
+              document.getElementById("connectstatus").classList.remove('hidden');
+              document.getElementById('logoutWidget').classList.remove('hidden');
+              document.getElementById('loginSMS').classList.add('hidden');
+              loggedIn = true;
+              showWidgets();
+          }
+      } else if(status.success==false) {
+          if(status.error=="No session") {
+              document.getElementById('loginSMS').classList.remove('hidden');
+              document.getElementById('connectstatus').classList.add('hidden');
+          } else if(status.error=="Unauthorized") {
+              document.getElementById("incorrectstatus").innerHTML = `Bad Authentication`;
+              document.getElementById("connectstatus").innerHTML = "Invalid Token";
+              document.getElementById('connectstatus').classList.remove('hidden');
+              document.getElementById('invalidCredentials').classList.remove('hidden');
+              $('#modalAuthenticate').modal({closable:false}).modal('show');
+          }
+      } else {
+          document.getElementById("connectstatus").innerHTML = `Bad Authentication ${status.Status}`;
+          document.getElementById('connectstatus').classList.remove('hidden');
+      }
+      return;
+    });
+}
+
+$(document).ready(function() {
+  $('#webhookEvents').dropdown({
+    onChange: function(value, text, $selectedItem) {
+      if (value.includes('All')) {
+        $('#webhookEvents').dropdown('set selected', [
+          'Message', 
+          'MessageEdit',
+          'MessageDelete',
+          'ReadReceipt', 
+          'Connected', 
+          'Disconnected', 
+          'ChatUpdate',
+          'Typing',
+          'ReactionChange',
+          'ContactUpdate',
+          'PresenceUpdate',
+          'FileReady',
+          'All'
+        ]);
+      }
+    }
+  });
+});
+
+</script>
+</body>
+</html>

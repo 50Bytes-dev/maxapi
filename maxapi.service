@@ -1,0 +1,17 @@
+[Unit]
+Description=MaxAPI
+After=network-online.target
+Wants=network-online.target systemd-networkd-wait-online.service
+
+StartLimitIntervalSec=500
+StartLimitBurst=5
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory=/usr/local/maxapi
+ExecStart=/usr/local/maxapi/maxapi
+
+[Install]
+WantedBy=multi-user.target
+

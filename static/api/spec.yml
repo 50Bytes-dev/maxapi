@@ -1,0 +1,1624 @@
+basePath: /
+definitions:
+  main.AddUserBody:
+    properties:
+      events:
+        example: All
+        type: string
+      name:
+        example: John Doe
+        type: string
+      webhook:
+        example: https://example.com/webhook
+        type: string
+    type: object
+  main.AudioBody:
+    properties:
+      audio:
+        example: data:audio/mp3;base64,...
+        type: string
+      chatId:
+        example: 123456789
+        type: integer
+      fileName:
+        example: audio.mp3
+        type: string
+      notify:
+        example: true
+        type: boolean
+      phone:
+        example: "79001234567"
+        type: string
+    type: object
+  main.AuthConfirmBody:
+    properties:
+      code:
+        example: "123456"
+        type: string
+    type: object
+  main.AuthRegisterBody:
+    properties:
+      firstName:
+        example: John
+        type: string
+      lastName:
+        example: Doe
+        type: string
+    type: object
+  main.AuthRequestBody:
+    properties:
+      language:
+        example: ru
+        type: string
+      phone:
+        example: "79001234567"
+        type: string
+    type: object
+  main.ChatHistoryBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      count:
+        example: 50
+        type: integer
+      fromTime:
+        example: 0
+        type: integer
+    type: object
+  main.CheckUserBody:
+    properties:
+      phone:
+        items:
+          type: string
+        type: array
+    type: object
+  main.ConnectBody:
+    properties:
+      immediate:
+        example: false
+        type: boolean
+      subscribe:
+        example:
+        - Message
+        - ReadReceipt
+        items:
+          type: string
+        type: array
+    type: object
+  main.CreateGroupBody:
+    properties:
+      name:
+        example: My Group
+        type: string
+      participants:
+        items:
+          type: integer
+        type: array
+    type: object
+  main.DeleteMessageBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      forMe:
+        example: false
+        type: boolean
+      messageIds:
+        items:
+          type: integer
+        type: array
+    type: object
+  main.DocumentBody:
+    properties:
+      caption:
+        example: Document caption
+        type: string
+      chatId:
+        example: 123456789
+        type: integer
+      document:
+        example: data:application/pdf;base64,...
+        type: string
+      fileName:
+        example: document.pdf
+        type: string
+      notify:
+        example: true
+        type: boolean
+      phone:
+        example: "79001234567"
+        type: string
+    type: object
+  main.DownloadBody:
+    properties:
+      url:
+        example: https://example.com/image.jpg
+        type: string
+    type: object
+  main.DownloadFileBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      fileId:
+        example: 111222333
+        type: integer
+      messageId:
+        example: 987654321
+        type: integer
+      videoId:
+        example: 111222333
+        type: integer
+    type: object
+  main.EditMessageBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      messageId:
+        example: 987654321
+        type: integer
+      text:
+        example: Updated message
+        type: string
+    type: object
+  main.EditUserBody:
+    properties:
+      events:
+        example: All
+        type: string
+      name:
+        example: John Doe
+        type: string
+      webhook:
+        example: https://example.com/webhook
+        type: string
+    type: object
+  main.GroupInfoBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+    type: object
+  main.GroupJoinBody:
+    properties:
+      link:
+        example: https://max.ru/join/abc123
+        type: string
+    type: object
+  main.GroupNameBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      name:
+        example: New Group Name
+        type: string
+    type: object
+  main.GroupTopicBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      topic:
+        example: Group description
+        type: string
+    type: object
+  main.ImageBody:
+    properties:
+      caption:
+        example: Image caption
+        type: string
+      chatId:
+        example: 123456789
+        type: integer
+      image:
+        example: data:image/jpeg;base64,...
+        type: string
+      notify:
+        example: true
+        type: boolean
+      phone:
+        example: "79001234567"
+        type: string
+    type: object
+  main.MarkReadBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      messageId:
+        example: 987654321
+        type: integer
+    type: object
+  main.MessageBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      notify:
+        example: true
+        type: boolean
+      phone:
+        example: "79001234567"
+        type: string
+      replyTo:
+        example: 0
+        type: integer
+      text:
+        example: Hello, World!
+        type: string
+    type: object
+  main.PresenceBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+    type: object
+  main.ReactBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      messageId:
+        example: "987654321"
+        type: string
+      reaction:
+        example: "\U0001F44D"
+        type: string
+    type: object
+  main.Response:
+    description: Standard API response format
+    properties:
+      code:
+        example: 200
+        type: integer
+      data: {}
+      error:
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  main.UpdateParticipantsBody:
+    properties:
+      chatId:
+        example: 123456789
+        type: integer
+      operation:
+        enum:
+        - add
+        - remove
+        example: add
+        type: string
+      userIds:
+        items:
+          type: integer
+        type: array
+    type: object
+  main.UserInfoBody:
+    properties:
+      userId:
+        example: 123456789
+        type: integer
+    type: object
+  main.UserResponse:
+    properties:
+      authenticated:
+        example: true
+        type: boolean
+      connected:
+        example: 1
+        type: integer
+      events:
+        example: All
+        type: string
+      id:
+        example: a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0
+        type: string
+      maxUserId:
+        example: 123456789
+        type: integer
+      name:
+        example: John Doe
+        type: string
+      token:
+        example: abc123def456
+        type: string
+      webhook:
+        example: https://example.com/webhook
+        type: string
+    type: object
+  main.VideoBody:
+    properties:
+      caption:
+        example: Video caption
+        type: string
+      chatId:
+        example: 123456789
+        type: integer
+      fileName:
+        example: video.mp4
+        type: string
+      notify:
+        example: true
+        type: boolean
+      phone:
+        example: "79001234567"
+        type: string
+      video:
+        example: data:video/mp4;base64,...
+        type: string
+    type: object
+  main.WebhookBody:
+    properties:
+      webhook:
+        example: https://example.com/webhook
+        type: string
+    type: object
+host: localhost:5555
+info:
+  contact: {}
+  description: |-
+    MaxAPI implements a multi-user and multi-device REST API for MAX Messenger.
+
+    ## Authentication
+    - **Standard Endpoints**: Include the `token` header with a valid user token
+    - **Admin Endpoints**: Use the `Authorization` header with the admin token (set in .env as MAXAPI_ADMIN_TOKEN)
+
+    ## Phone number format
+    - Required: Country code (e.g. **79001234567** for Russia)
+    - Do not prefix with a plus sign (+)
+  title: MaxAPI
+  version: 3.0.0
+paths:
+  /admin/users:
+    get:
+      description: Returns a list of all users in the system
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/main.UserResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - AdminAuth: []
+      summary: List all users
+      tags:
+      - Admin
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user in the system
+      parameters:
+      - description: User data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.AddUserBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - AdminAuth: []
+      summary: Create user
+      tags:
+      - Admin
+  /admin/users/{userid}:
+    delete:
+      description: Deletes a user from the system
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - AdminAuth: []
+      summary: Delete user
+      tags:
+      - Admin
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing user
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        type: string
+      - description: User data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.EditUserBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - AdminAuth: []
+      summary: Update user
+      tags:
+      - Admin
+  /chat/delete:
+    post:
+      consumes:
+      - application/json
+      description: Deletes messages from a chat
+      parameters:
+      - description: Delete data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.DeleteMessageBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete messages
+      tags:
+      - Chat
+  /chat/downloadaudio:
+    post:
+      consumes:
+      - application/json
+      description: Downloads audio by file ID
+      parameters:
+      - description: Audio info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.DownloadFileBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Download audio
+      tags:
+      - Chat
+  /chat/downloaddocument:
+    post:
+      consumes:
+      - application/json
+      description: Downloads a document by file ID
+      parameters:
+      - description: File info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.DownloadFileBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Download document
+      tags:
+      - Chat
+  /chat/downloadimage:
+    post:
+      consumes:
+      - application/json
+      description: Downloads an image from URL
+      parameters:
+      - description: URL
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.DownloadBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Download image
+      tags:
+      - Chat
+  /chat/downloadvideo:
+    post:
+      consumes:
+      - application/json
+      description: Downloads a video by video ID
+      parameters:
+      - description: Video info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.DownloadFileBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Download video
+      tags:
+      - Chat
+  /chat/history:
+    post:
+      consumes:
+      - application/json
+      description: Gets message history for a chat
+      parameters:
+      - description: History parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ChatHistoryBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get chat history
+      tags:
+      - Chat
+  /chat/markread:
+    post:
+      consumes:
+      - application/json
+      description: Marks messages as read in a chat
+      parameters:
+      - description: Mark read data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.MarkReadBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Mark messages as read
+      tags:
+      - Chat
+  /chat/presence:
+    post:
+      consumes:
+      - application/json
+      description: Sends typing indicator to a chat
+      parameters:
+      - description: Chat ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.PresenceBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Send presence
+      tags:
+      - User
+  /chat/react:
+    post:
+      consumes:
+      - application/json
+      description: Adds or removes a reaction to a message
+      parameters:
+      - description: Reaction data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ReactBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Add reaction
+      tags:
+      - Chat
+  /chat/send/audio:
+    post:
+      consumes:
+      - application/json
+      description: Sends an audio file to a chat
+      parameters:
+      - description: Audio data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.AudioBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Send audio
+      tags:
+      - Chat
+  /chat/send/document:
+    post:
+      consumes:
+      - application/json
+      description: Sends a document to a chat
+      parameters:
+      - description: Document data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.DocumentBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Send document
+      tags:
+      - Chat
+  /chat/send/edit:
+    post:
+      consumes:
+      - application/json
+      description: Edits an existing message
+      parameters:
+      - description: Edit data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.EditMessageBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Edit message
+      tags:
+      - Chat
+  /chat/send/image:
+    post:
+      consumes:
+      - application/json
+      description: Sends an image message to a chat
+      parameters:
+      - description: Image data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ImageBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Send image
+      tags:
+      - Chat
+  /chat/send/text:
+    post:
+      consumes:
+      - application/json
+      description: Sends a text message to a chat
+      parameters:
+      - description: Message data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.MessageBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Not connected
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Send text message
+      tags:
+      - Chat
+  /chat/send/video:
+    post:
+      consumes:
+      - application/json
+      description: Sends a video to a chat
+      parameters:
+      - description: Video data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.VideoBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Send video
+      tags:
+      - Chat
+  /group/create:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new group with specified participants
+      parameters:
+      - description: Group data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.CreateGroupBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Create group
+      tags:
+      - Group
+  /group/info:
+    post:
+      consumes:
+      - application/json
+      description: Gets group information by chat ID
+      parameters:
+      - description: Chat ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.GroupInfoBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get group info
+      tags:
+      - Group
+  /group/invitelink:
+    post:
+      consumes:
+      - application/json
+      description: Gets invite link for a group
+      parameters:
+      - description: Chat ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.GroupInfoBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get group invite link
+      tags:
+      - Group
+  /group/join:
+    post:
+      consumes:
+      - application/json
+      description: Joins a group via invite link
+      parameters:
+      - description: Invite link
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.GroupJoinBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Join group
+      tags:
+      - Group
+  /group/leave:
+    post:
+      consumes:
+      - application/json
+      description: Leaves a group
+      parameters:
+      - description: Chat ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.GroupInfoBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Leave group
+      tags:
+      - Group
+  /group/list:
+    get:
+      description: Lists all groups and channels
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: List groups
+      tags:
+      - Group
+  /group/name:
+    post:
+      consumes:
+      - application/json
+      description: Sets the name of a group
+      parameters:
+      - description: Group name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.GroupNameBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Set group name
+      tags:
+      - Group
+  /group/topic:
+    post:
+      consumes:
+      - application/json
+      description: Sets the topic/description of a group
+      parameters:
+      - description: Group topic
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.GroupTopicBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Set group topic
+      tags:
+      - Group
+  /group/updateparticipants:
+    post:
+      consumes:
+      - application/json
+      description: Adds or removes participants from a group
+      parameters:
+      - description: Participants data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.UpdateParticipantsBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Update group participants
+      tags:
+      - Group
+  /session/auth/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the SMS code and returns auth token
+      parameters:
+      - description: SMS code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.AuthConfirmBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Confirm SMS verification code
+      tags:
+      - Auth
+  /session/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Registers a new user with first and last name
+      parameters:
+      - description: User registration data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.AuthRegisterBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Register new user
+      tags:
+      - Auth
+  /session/auth/request:
+    post:
+      consumes:
+      - application/json
+      description: Sends an SMS verification code to the specified phone number
+      parameters:
+      - description: Phone number and language
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.AuthRequestBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Request SMS verification code
+      tags:
+      - Auth
+  /session/connect:
+    post:
+      consumes:
+      - application/json
+      description: Initiates connection to MAX servers using saved auth token
+      parameters:
+      - description: Connection options
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ConnectBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "409":
+          description: Already connected
+          schema:
+            $ref: '#/definitions/main.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Connect to MAX servers
+      tags:
+      - Session
+  /session/disconnect:
+    post:
+      description: Closes connection to MAX servers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Disconnect from MAX servers
+      tags:
+      - Session
+  /session/logout:
+    post:
+      description: Logs out from MAX and clears auth token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Logout from MAX
+      tags:
+      - Session
+  /session/status:
+    get:
+      description: Returns connection and authentication status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get connection status
+      tags:
+      - Session
+  /user/avatar:
+    post:
+      consumes:
+      - application/json
+      description: Gets user avatar URL by MAX user ID
+      parameters:
+      - description: User ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.UserInfoBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get user avatar
+      tags:
+      - User
+  /user/check:
+    post:
+      consumes:
+      - application/json
+      description: Checks if phone numbers exist in MAX
+      parameters:
+      - description: Phone numbers
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.CheckUserBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Check user existence
+      tags:
+      - User
+  /user/info:
+    post:
+      consumes:
+      - application/json
+      description: Gets user information by MAX user ID
+      parameters:
+      - description: User ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.UserInfoBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get user info
+      tags:
+      - User
+  /webhook:
+    delete:
+      description: Removes the webhook URL
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete webhook
+      tags:
+      - Webhook
+    get:
+      description: Returns current webhook URL
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get webhook
+      tags:
+      - Webhook
+    post:
+      consumes:
+      - application/json
+      description: Sets webhook URL for receiving events
+      parameters:
+      - description: Webhook URL
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.WebhookBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Set webhook
+      tags:
+      - Webhook
+    put:
+      consumes:
+      - application/json
+      description: Updates webhook URL
+      parameters:
+      - description: Webhook URL
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.WebhookBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Update webhook
+      tags:
+      - Webhook
+securityDefinitions:
+  AdminAuth:
+    description: Admin token for admin endpoints
+    in: header
+    name: Authorization
+    type: apiKey
+  ApiKeyAuth:
+    description: User token for authentication
+    in: header
+    name: token
+    type: apiKey
+swagger: "2.0"
