@@ -35,9 +35,9 @@ func SafeMaxClientStatus(userID string) (isConnected bool) {
 // Respond sends a JSON response
 func (s *server) Respond(w http.ResponseWriter, r *http.Request, statusCode int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	var response map[string]interface{}
-	
+
 	switch v := payload.(type) {
 	case error:
 		response = map[string]interface{}{
@@ -52,7 +52,7 @@ func (s *server) Respond(w http.ResponseWriter, r *http.Request, statusCode int,
 			"data":    v,
 		}
 	}
-	
+
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Error().Err(err).Msg("Failed to encode JSON response")
@@ -123,7 +123,7 @@ func callHook(myurl string, payload map[string]string, id string) {
 		return
 	}
 
-	format := os.Getenv("WEBHOOK_FORMAT")
+	format := os.Getenv("MAXAPI_WEBHOOK_FORMAT")
 	if format == "json" {
 		// Send as pure JSON
 		// The original payload is a map[string]string, but we want to send the postmap (map[string]interface{})

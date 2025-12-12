@@ -81,7 +81,7 @@ RABBITMQ_QUEUE=max_events
 
 # Optional
 TZ=Europe/Moscow
-WEBHOOK_FORMAT=json
+MAXAPI_WEBHOOK_FORMAT=json
 ```
 
 ## Quick Start

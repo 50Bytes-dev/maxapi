@@ -76,10 +76,79 @@ func initializePostgres(config DatabaseConfig) (*sqlx.DB, error) {
 	}
 
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping postgres database: %w", err)
+		db.Close()
+		if createErr := createPostgresDatabase(config); createErr != nil {
+			return nil, fmt.Errorf("failed to ping postgres database and could not create it: ping error: %w, create error: %v", err, createErr)
+		}
+
+		db, err = sqlx.Open("postgres", dsn)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open postgres connection after creating database: %w", err)
+		}
+
+		if err := db.Ping(); err != nil {
+			return nil, fmt.Errorf("failed to ping postgres database after creating it: %w", err)
+		}
 	}
 
 	return db, nil
+}
+
+func createPostgresDatabase(config DatabaseConfig) error {
+	systemDSN := fmt.Sprintf(
+		"user=%s password=%s dbname=postgres host=%s port=%s sslmode=%s",
+		config.User, config.Password, config.Host, config.Port, config.SSLMode,
+	)
+
+	systemDB, err := sqlx.Open("postgres", systemDSN)
+	if err != nil {
+		return fmt.Errorf("failed to connect to system postgres database: %w", err)
+	}
+	defer systemDB.Close()
+
+	if err := systemDB.Ping(); err != nil {
+		return fmt.Errorf("failed to ping system postgres database: %w", err)
+	}
+
+	var exists bool
+	checkQuery := "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)"
+	if err := systemDB.Get(&exists, checkQuery, config.Name); err != nil {
+		return fmt.Errorf("failed to check if database exists: %w", err)
+	}
+
+	if exists {
+		return nil
+	}
+
+	if !isValidDatabaseName(config.Name) {
+		return fmt.Errorf("invalid database name: %s", config.Name)
+	}
+
+	createQuery := fmt.Sprintf("CREATE DATABASE %s", config.Name)
+	if _, err := systemDB.Exec(createQuery); err != nil {
+		return fmt.Errorf("failed to create database '%s': %w", config.Name, err)
+	}
+
+	fmt.Printf("Database '%s' created successfully\n", config.Name)
+	return nil
+}
+
+func isValidDatabaseName(name string) bool {
+	if len(name) == 0 || len(name) > 63 {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_') {
+				return false
+			}
+		} else {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func initializeSQLite(config DatabaseConfig) (*sqlx.DB, error) {
@@ -102,16 +171,16 @@ func initializeSQLite(config DatabaseConfig) (*sqlx.DB, error) {
 
 // HistoryMessage represents a message in history (MAX messenger)
 type HistoryMessage struct {
-	ID              int       `json:"id" db:"id"`
-	UserID          string    `json:"user_id" db:"user_id"`
-	ChatID          string    `json:"chat_id" db:"chat_id"`
-	SenderID        string    `json:"sender_id" db:"sender_id"`
-	MessageID       string    `json:"message_id" db:"message_id"`
-	Timestamp       time.Time `json:"timestamp" db:"timestamp"`
-	MessageType     string    `json:"message_type" db:"message_type"`
-	TextContent     string    `json:"text_content" db:"text_content"`
-	MediaLink       string    `json:"media_link" db:"media_link"`
-	ReplyToID       string    `json:"reply_to_id,omitempty" db:"reply_to_id"`
+	ID          int       `json:"id" db:"id"`
+	UserID      string    `json:"user_id" db:"user_id"`
+	ChatID      string    `json:"chat_id" db:"chat_id"`
+	SenderID    string    `json:"sender_id" db:"sender_id"`
+	MessageID   string    `json:"message_id" db:"message_id"`
+	Timestamp   time.Time `json:"timestamp" db:"timestamp"`
+	MessageType string    `json:"message_type" db:"message_type"`
+	TextContent string    `json:"text_content" db:"text_content"`
+	MediaLink   string    `json:"media_link" db:"media_link"`
+	ReplyToID   string    `json:"reply_to_id,omitempty" db:"reply_to_id"`
 }
 
 func (s *server) saveMessageToHistory(userID, chatID, senderID, messageID, messageType, textContent, mediaLink, replyToID string) error {
@@ -160,7 +229,7 @@ func (s *server) trimMessageHistory(userID, chatID string, limit int) error {
 func (s *server) getMessageHistory(userID, chatID string, limit int) ([]HistoryMessage, error) {
 	var messages []HistoryMessage
 	var query string
-	
+
 	if s.db.DriverName() == "postgres" {
 		query = `
             SELECT id, user_id, chat_id, sender_id, message_id, timestamp, message_type, 
@@ -182,7 +251,7 @@ func (s *server) getMessageHistory(userID, chatID string, limit int) ([]HistoryM
             ORDER BY timestamp DESC
             LIMIT ?`
 	}
-	
+
 	err := s.db.Select(&messages, query, userID, chatID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get message history: %w", err)
