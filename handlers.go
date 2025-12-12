@@ -1290,16 +1290,21 @@ func (s *server) GetAllChats() http.HandlerFunc {
 			return
 		}
 
-		// Data from client memory (loaded during Login)
+		dialogs, groups, channels, err := client.GetAllChats()
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get chats: %v", err))
+			return
+		}
+
 		response := map[string]interface{}{
 			"success":  true,
-			"dialogs":  client.Dialogs,
-			"groups":   client.Chats,
-			"channels": client.Channels,
+			"dialogs":  dialogs,
+			"groups":   groups,
+			"channels": channels,
 			"counts": map[string]int{
-				"dialogs":  len(client.Dialogs),
-				"groups":   len(client.Chats),
-				"channels": len(client.Channels),
+				"dialogs":  len(dialogs),
+				"groups":   len(groups),
+				"channels": len(channels),
 			},
 		}
 
@@ -1307,13 +1312,13 @@ func (s *server) GetAllChats() http.HandlerFunc {
 	}
 }
 
-// GetUser gets user info by ID
+// GetUser gets user info by ID or multiple IDs
 // @Summary Get user info
-// @Description Gets user information by MAX user ID
+// @Description Gets user information by MAX user ID. Supports single userId or batch request with userIds array (max 100)
 // @Tags User
 // @Accept json
 // @Produce json
-// @Param request body UserInfoBody true "User ID"
+// @Param request body UserInfoBody true "User ID or IDs array"
 // @Success 200 {object} UserInfoResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
@@ -1337,62 +1342,33 @@ func (s *server) GetUser() http.HandlerFunc {
 			return
 		}
 
-		user, err := client.GetUser(msg.UserID)
-		if err != nil {
-			s.Respond(w, r, http.StatusNotFound, fmt.Errorf("user not found: %v", err))
+		if len(msg.UserIDs) == 0 {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("userIds is required"))
 			return
+		}
+
+		users, err := client.GetUsers(msg.UserIDs)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get users: %v", err))
+			return
+		}
+
+		// Convert to response format with avatar URLs
+		usersResponse := make([]map[string]interface{}, 0, len(users))
+		for _, user := range users {
+			usersResponse = append(usersResponse, map[string]interface{}{
+				"id":          user.ID,
+				"names":       user.Names,
+				"avatarUrl":   maxclient.GetUserAvatarURL(&user),
+				"description": user.Description,
+				"photoId":     user.PhotoID,
+			})
 		}
 
 		response := map[string]interface{}{
 			"success": true,
-			"user":    user,
-		}
-
-		s.Respond(w, r, http.StatusOK, response)
-	}
-}
-
-// GetAvatar gets user avatar URL
-// @Summary Get user avatar
-// @Description Gets user avatar URL by MAX user ID
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param request body UserInfoBody true "User ID"
-// @Success 200 {object} AvatarResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /user/avatar [post]
-func (s *server) GetAvatar() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		client := clientManager.GetMaxClient(txtid)
-		if client == nil || !client.IsConnected() {
-			s.Respond(w, r, http.StatusServiceUnavailable, errors.New("not connected"))
-			return
-		}
-
-		decoder := json.NewDecoder(r.Body)
-		var msg UserInfoBody
-		if err := decoder.Decode(&msg); err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
-		}
-
-		user, err := client.GetUser(msg.UserID)
-		if err != nil {
-			s.Respond(w, r, http.StatusNotFound, fmt.Errorf("user not found: %v", err))
-			return
-		}
-
-		avatarURL := maxclient.GetUserAvatarURL(user)
-
-		response := map[string]interface{}{
-			"success":   true,
-			"avatarUrl": avatarURL,
+			"users":   usersResponse,
+			"count":   len(usersResponse),
 		}
 
 		s.Respond(w, r, http.StatusOK, response)
@@ -1800,36 +1776,6 @@ func (s *server) SetGroupTopic() http.HandlerFunc {
 		response := map[string]interface{}{
 			"success": true,
 			"message": "Group topic updated",
-		}
-
-		s.Respond(w, r, http.StatusOK, response)
-	}
-}
-
-// ListGroups lists all groups
-// @Summary List groups
-// @Description Lists all groups and channels
-// @Tags Group
-// @Produce json
-// @Success 200 {object} ListGroupsResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/list [get]
-func (s *server) ListGroups() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		client := clientManager.GetMaxClient(txtid)
-		if client == nil || !client.IsConnected() {
-			s.Respond(w, r, http.StatusServiceUnavailable, errors.New("not connected"))
-			return
-		}
-
-		// Return cached chats
-		response := map[string]interface{}{
-			"success":  true,
-			"groups":   client.Chats,
-			"channels": client.Channels,
 		}
 
 		s.Respond(w, r, http.StatusOK, response)

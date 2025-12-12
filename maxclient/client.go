@@ -56,12 +56,9 @@ type Client struct {
 	fileWaiters   map[int64]chan *Response
 	fileWaitersMu sync.Mutex
 	
-	// Cached data
-	Dialogs  []Dialog
-	Chats    []Chat
-	Channels []Chat
-	users    map[int64]*User
-	usersMu  sync.RWMutex
+	// User cache
+	users   map[int64]*User
+	usersMu sync.RWMutex
 	
 	// Event handling
 	eventHandler func(Event)

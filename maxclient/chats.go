@@ -5,6 +5,60 @@ import (
 	"time"
 )
 
+// GetAllChats fetches all chats (dialogs, groups, channels)
+func (c *Client) GetAllChats() ([]Dialog, []Chat, []Chat, error) {
+	payload := map[string]interface{}{}
+	
+	c.Logger.Info().Msg("Fetching all chats")
+	
+	resp, err := c.sendAndWait(OpChatsList, payload)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	
+	var dialogs []Dialog
+	var groups []Chat
+	var channels []Chat
+	
+	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
+		for _, chatRaw := range chatsRaw {
+			chatMap, ok := chatRaw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			
+			chatBytes, _ := json.Marshal(chatMap)
+			chatType, _ := chatMap["type"].(string)
+			
+			switch ChatType(chatType) {
+			case ChatTypeDialog:
+				var dialog Dialog
+				if err := json.Unmarshal(chatBytes, &dialog); err == nil {
+					dialogs = append(dialogs, dialog)
+				}
+			case ChatTypeChat:
+				var chat Chat
+				if err := json.Unmarshal(chatBytes, &chat); err == nil {
+					groups = append(groups, chat)
+				}
+			case ChatTypeChannel:
+				var channel Chat
+				if err := json.Unmarshal(chatBytes, &channel); err == nil {
+					channels = append(channels, channel)
+				}
+			}
+		}
+	}
+	
+	c.Logger.Info().
+		Int("dialogs", len(dialogs)).
+		Int("groups", len(groups)).
+		Int("channels", len(channels)).
+		Msg("Fetched chats")
+	
+	return dialogs, groups, channels, nil
+}
+
 // GetChatHistory gets message history for a chat
 func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backward int) ([]Message, error) {
 	if fromTime == 0 {

@@ -121,12 +121,10 @@ func (s *server) routes() {
 	s.router.Handle("/user/chats", c.Then(s.GetAllChats())).Methods("GET")
 	s.router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
 	s.router.Handle("/user/info", c.Then(s.GetUser())).Methods("POST")
-	s.router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
 	s.router.Handle("/user/presence", c.Then(s.SendPresence())).Methods("POST")
 
 	// ========== GROUP ENDPOINTS ==========
 	s.router.Handle("/group/create", c.Then(s.CreateGroup())).Methods("POST")
-	s.router.Handle("/group/list", c.Then(s.ListGroups())).Methods("GET")
 	s.router.Handle("/group/info", c.Then(s.GetGroupInfo())).Methods("POST")
 	s.router.Handle("/group/invitelink", c.Then(s.GetGroupInviteLink())).Methods("POST")
 	s.router.Handle("/group/join", c.Then(s.GroupJoin())).Methods("POST")

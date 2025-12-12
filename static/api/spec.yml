@@ -142,16 +142,6 @@ components:
           example: temp_token_value
           type: string
       type: object
-    AvatarResponse:
-      description: Response with user avatar URL
-      properties:
-        avatarUrl:
-          example: https://example.com/avatar.jpg
-          type: string
-        success:
-          example: true
-          type: boolean
-      type: object
     ChatCounts:
       description: Counts of dialogs, groups and channels
       properties:
@@ -454,25 +444,6 @@ components:
           example: true
           type: boolean
       type: object
-    ListGroupsResponse:
-      description: Response with list of groups and channels
-      properties:
-        channels:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-          uniqueItems: false
-        groups:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-          uniqueItems: false
-        success:
-          example: true
-          type: boolean
-      type: object
     ListUsersResponse:
       description: Response with list of users
       properties:
@@ -591,9 +562,11 @@ components:
       type: object
     UserInfoBody:
       properties:
-        userId:
-          example: 123456789
-          type: integer
+        userIds:
+          items:
+            type: integer
+          type: array
+          uniqueItems: false
       type: object
     UserInfoResponse:
       description: Response with user information
@@ -1512,27 +1485,6 @@ paths:
       summary: Leave group
       tags:
       - Group
-  /group/list:
-    get:
-      description: Lists all groups and channels
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListGroupsResponse'
-          description: OK
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: List groups
-      tags:
-      - Group
   /group/name:
     post:
       description: Sets the name of a group
@@ -1810,46 +1762,6 @@ paths:
       summary: Get connection status
       tags:
       - Session
-  /user/avatar:
-    post:
-      description: Gets user avatar URL by MAX user ID
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserInfoBody'
-        description: User ID
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AvatarResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Not Found
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Get user avatar
-      tags:
-      - User
   /user/chats:
     get:
       description: Returns all dialogs, groups and channels
@@ -1928,13 +1840,14 @@ paths:
       - User
   /user/info:
     post:
-      description: Gets user information by MAX user ID
+      description: Gets user information by MAX user ID. Supports single userId or
+        batch request with userIds array (max 100)
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UserInfoBody'
-        description: User ID
+        description: User ID or IDs array
         required: true
       responses:
         "200":

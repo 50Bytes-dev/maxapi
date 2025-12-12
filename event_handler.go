@@ -387,8 +387,8 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 
 	// Keep connection alive with auto-reconnect
 	reconnectAttempts := 0
-	maxReconnectAttempts := 10
-	baseReconnectDelay := 5 * time.Second
+	maxReconnectAttempts := 120
+	reconnectDelay := 5 * time.Second
 
 	for {
 		select {
@@ -422,22 +422,19 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 					return
 				}
 
-				// Calculate exponential backoff delay
-				delay := baseReconnectDelay * time.Duration(reconnectAttempts)
-				if delay > 60*time.Second {
-					delay = 60 * time.Second
+				log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Int("max", maxReconnectAttempts).Msg("Connection lost, attempting reconnect...")
+
+				// Send reconnecting event (only every 10 attempts to avoid spam)
+				if reconnectAttempts == 1 || reconnectAttempts%10 == 0 {
+					postmap := map[string]interface{}{
+						"type":    "Reconnecting",
+						"attempt": reconnectAttempts,
+						"max":     maxReconnectAttempts,
+					}
+					sendEventWithWebHook(mycli, postmap, "")
 				}
 
-				log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Dur("delay", delay).Msg("Connection lost, attempting reconnect...")
-
-				// Send reconnecting event
-				postmap := map[string]interface{}{
-					"type":    "Reconnecting",
-					"attempt": reconnectAttempts,
-				}
-				sendEventWithWebHook(mycli, postmap, "")
-
-				time.Sleep(delay)
+				time.Sleep(reconnectDelay)
 
 				// Try to reconnect
 				err := client.ConnectAndLogin(authToken, nil)
@@ -457,7 +454,7 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 				}
 
 				// Send reconnected event
-				postmap = map[string]interface{}{
+				postmap := map[string]interface{}{
 					"type":      "Connected",
 					"maxUserID": client.MaxUserID,
 					"reconnect": true,

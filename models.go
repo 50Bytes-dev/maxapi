@@ -117,13 +117,6 @@ type UserInfoResponse struct {
 	User    map[string]interface{} `json:"user"`
 }
 
-// AvatarResponse represents the response for getting user avatar
-// @Description Response with user avatar URL
-type AvatarResponse struct {
-	Success   bool   `json:"success" example:"true"`
-	AvatarURL string `json:"avatarUrl" example:"https://example.com/avatar.jpg"`
-}
-
 // ContactsResponse represents the response for getting contacts
 // @Description Response with list of contacts
 type ContactsResponse struct {
@@ -164,14 +157,6 @@ type GroupChatResponse struct {
 type InviteLinkResponse struct {
 	Success    bool   `json:"success" example:"true"`
 	InviteLink string `json:"inviteLink" example:"https://max.ru/join/abc123"`
-}
-
-// ListGroupsResponse represents the response for listing groups
-// @Description Response with list of groups and channels
-type ListGroupsResponse struct {
-	Success  bool                     `json:"success" example:"true"`
-	Groups   []map[string]interface{} `json:"groups"`
-	Channels []map[string]interface{} `json:"channels"`
 }
 
 // ========== WEBHOOK RESPONSES ==========
@@ -298,7 +283,7 @@ type CheckUserBody struct {
 
 // UserInfoBody represents the request body for getting user info
 type UserInfoBody struct {
-	UserID int64 `json:"userId" example:"123456789"`
+	UserIDs []int64 `json:"userIds"`
 }
 
 // PresenceBody represents the request body for sending presence
