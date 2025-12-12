@@ -7,7 +7,7 @@ package main
 type Response struct {
 	Code    int         `json:"code" example:"200"`
 	Success bool        `json:"success" example:"true"`
-	Data    interface{} `json:"data,omitempty"`
+	Data    interface{} `json:"data,omitempty" swaggertype:"object"`
 	Error   string      `json:"error,omitempty"`
 }
 

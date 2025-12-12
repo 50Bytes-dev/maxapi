@@ -35,8 +35,8 @@ import (
 // @description - Required: Country code (e.g. **79001234567** for Russia)
 // @description - Do not prefix with a plus sign (+)
 
-// @host localhost:5555
-// @BasePath /
+// @servers.url http://localhost:5555
+// @servers.description Local development server
 
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
