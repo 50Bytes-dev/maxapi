@@ -1,12 +1,5 @@
 components:
   schemas:
-    data:
-      properties:
-        data:
-          items:
-            $ref: '#/components/schemas/UserResponse'
-          type: array
-      type: object
     AddUserBody:
       properties:
         events:
@@ -17,6 +10,22 @@ components:
           type: string
         webhook:
           example: https://example.com/webhook
+          type: string
+      type: object
+    AddUserResponse:
+      description: Response after creating a new user
+      properties:
+        id:
+          example: a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0
+          type: string
+        name:
+          example: John Doe
+          type: string
+        success:
+          example: true
+          type: boolean
+        token:
+          example: abc123def456
           type: string
       type: object
     AudioBody:
@@ -43,6 +52,25 @@ components:
           example: "123456"
           type: string
       type: object
+    AuthConfirmResponse:
+      description: Response after confirming SMS verification code
+      properties:
+        authToken:
+          example: auth_token_value
+          type: string
+        message:
+          example: Login successful
+          type: string
+        registerToken:
+          example: register_token_value
+          type: string
+        requiresRegistration:
+          example: false
+          type: boolean
+        success:
+          example: true
+          type: boolean
+      type: object
     AuthRegisterBody:
       properties:
         firstName:
@@ -52,6 +80,19 @@ components:
           example: Doe
           type: string
       type: object
+    AuthRegisterResponse:
+      description: Response after successful registration
+      properties:
+        authToken:
+          example: auth_token_value
+          type: string
+        message:
+          example: Registration successful
+          type: string
+        success:
+          example: true
+          type: boolean
+      type: object
     AuthRequestBody:
       properties:
         language:
@@ -60,6 +101,29 @@ components:
         phone:
           example: "79001234567"
           type: string
+      type: object
+    AuthRequestResponse:
+      description: Response after requesting SMS verification code
+      properties:
+        message:
+          example: Verification code sent
+          type: string
+        success:
+          example: true
+          type: boolean
+        tempToken:
+          example: temp_token_value
+          type: string
+      type: object
+    AvatarResponse:
+      description: Response with user avatar URL
+      properties:
+        avatarUrl:
+          example: https://example.com/avatar.jpg
+          type: string
+        success:
+          example: true
+          type: boolean
       type: object
     ChatHistoryBody:
       properties:
@@ -73,6 +137,19 @@ components:
           example: 0
           type: integer
       type: object
+    ChatHistoryResponse:
+      description: Response with chat history messages
+      properties:
+        messages:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
+        success:
+          example: true
+          type: boolean
+      type: object
     CheckUserBody:
       properties:
         phone:
@@ -80,6 +157,34 @@ components:
             type: string
           type: array
           uniqueItems: false
+      type: object
+    CheckUserResponse:
+      description: Response with user existence check results
+      properties:
+        success:
+          example: true
+          type: boolean
+        users:
+          items:
+            $ref: '#/components/schemas/CheckUserResultItem'
+          type: array
+          uniqueItems: false
+      type: object
+    CheckUserResultItem:
+      description: Single user check result
+      properties:
+        exists:
+          example: true
+          type: boolean
+        maxUserId:
+          example: 123456789
+          type: integer
+        name:
+          example: John Doe
+          type: string
+        phone:
+          example: "79001234567"
+          type: string
       type: object
     ConnectBody:
       properties:
@@ -162,6 +267,35 @@ components:
           example: 111222333
           type: integer
       type: object
+    DownloadMediaResponse:
+      description: Response with downloaded media data
+      properties:
+        data:
+          example: base64_encoded_data
+          type: string
+        mimeType:
+          example: image/jpeg
+          type: string
+        success:
+          example: true
+          type: boolean
+      type: object
+    DownloadVideoResponse:
+      description: Response with downloaded video data
+      properties:
+        data:
+          example: base64_encoded_data
+          type: string
+        mimeType:
+          example: video/mp4
+          type: string
+        success:
+          example: true
+          type: boolean
+        url:
+          example: https://example.com/video.mp4
+          type: string
+      type: object
     EditMessageBody:
       properties:
         chatId:
@@ -185,6 +319,26 @@ components:
         webhook:
           example: https://example.com/webhook
           type: string
+      type: object
+    ErrorResponse:
+      description: Error response format
+      properties:
+        error:
+          example: error message
+          type: string
+        success:
+          example: false
+          type: boolean
+      type: object
+    GroupChatResponse:
+      description: Response with group or chat information
+      properties:
+        chat:
+          additionalProperties: {}
+          type: object
+        success:
+          example: true
+          type: boolean
       type: object
     GroupInfoBody:
       properties:
@@ -234,6 +388,47 @@ components:
           example: "79001234567"
           type: string
       type: object
+    InviteLinkResponse:
+      description: Response with group invite link
+      properties:
+        inviteLink:
+          example: https://max.ru/join/abc123
+          type: string
+        success:
+          example: true
+          type: boolean
+      type: object
+    ListGroupsResponse:
+      description: Response with list of groups and channels
+      properties:
+        channels:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
+        groups:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
+        success:
+          example: true
+          type: boolean
+      type: object
+    ListUsersResponse:
+      description: Response with list of users
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/UserResponse'
+          type: array
+          uniqueItems: false
+        success:
+          example: true
+          type: boolean
+      type: object
     MarkReadBody:
       properties:
         chatId:
@@ -261,6 +456,16 @@ components:
           example: Hello, World!
           type: string
       type: object
+    MessageResponse:
+      description: Simple success response with message
+      properties:
+        message:
+          example: Operation completed
+          type: string
+        success:
+          example: true
+          type: boolean
+      type: object
     PresenceBody:
       properties:
         chatId:
@@ -279,18 +484,34 @@ components:
           example: "\U0001F44D"
           type: string
       type: object
-    Response:
-      allOf:
-      - $ref: '#/components/schemas/data'
-      description: Standard API response format
+    SendMessageResponse:
+      description: Response after sending a message
       properties:
-        code:
-          example: 200
+        chatId:
+          example: 123456789
           type: integer
-        data:
-          type: object
-        error:
-          type: string
+        messageId:
+          example: 987654321
+          type: integer
+        success:
+          example: true
+          type: boolean
+      type: object
+    StatusResponse:
+      description: Connection and authentication status
+      properties:
+        authenticated:
+          example: true
+          type: boolean
+        connected:
+          example: true
+          type: boolean
+        loggedIn:
+          example: true
+          type: boolean
+        maxUserID:
+          example: 123456789
+          type: integer
         success:
           example: true
           type: boolean
@@ -317,6 +538,16 @@ components:
         userId:
           example: 123456789
           type: integer
+      type: object
+    UserInfoResponse:
+      description: Response with user information
+      properties:
+        success:
+          example: true
+          type: boolean
+        user:
+          additionalProperties: {}
+          type: object
       type: object
     UserResponse:
       properties:
@@ -372,6 +603,16 @@ components:
           example: https://example.com/webhook
           type: string
       type: object
+    WebhookResponse:
+      description: Response with webhook URL
+      properties:
+        success:
+          example: true
+          type: boolean
+        webhook:
+          example: https://example.com/webhook
+          type: string
+      type: object
   securitySchemes:
     AdminAuth:
       description: Admin token for admin endpoints
@@ -409,27 +650,13 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                - $ref: '#/components/schemas/data'
-                description: Standard API response format
-                properties:
-                  code:
-                    example: 200
-                    type: integer
-                  data:
-                    type: object
-                  error:
-                    type: string
-                  success:
-                    example: true
-                    type: boolean
-                type: object
+                $ref: '#/components/schemas/ListUsersResponse'
           description: OK
         "500":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Internal Server Error
       security:
       - AdminAuth: []
@@ -450,19 +677,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/AddUserResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "500":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Internal Server Error
       security:
       - AdminAuth: []
@@ -484,13 +711,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "500":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Internal Server Error
       security:
       - AdminAuth: []
@@ -518,19 +745,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "500":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Internal Server Error
       security:
       - AdminAuth: []
@@ -552,19 +779,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -586,19 +813,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/DownloadMediaResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -620,19 +847,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/DownloadMediaResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -654,19 +881,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/DownloadMediaResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "500":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Internal Server Error
       security:
       - ApiKeyAuth: []
@@ -688,19 +915,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/DownloadVideoResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -722,19 +949,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ChatHistoryResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -756,19 +983,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -790,19 +1017,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -824,19 +1051,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -858,19 +1085,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/SendMessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -892,19 +1119,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/SendMessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -926,19 +1153,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -960,19 +1187,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/SendMessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -994,19 +1221,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/SendMessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Not connected
       security:
       - ApiKeyAuth: []
@@ -1028,19 +1255,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/SendMessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1062,19 +1289,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/GroupChatResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1096,25 +1323,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/GroupChatResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "404":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Not Found
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1136,25 +1363,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/InviteLinkResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "404":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Not Found
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1176,19 +1403,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/GroupChatResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1210,19 +1437,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1237,13 +1464,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ListGroupsResponse'
           description: OK
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1265,19 +1492,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1299,19 +1526,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1333,19 +1560,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1367,13 +1594,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/AuthConfirmResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
       security:
       - ApiKeyAuth: []
@@ -1395,13 +1622,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/AuthRegisterResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
       security:
       - ApiKeyAuth: []
@@ -1423,19 +1650,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/AuthRequestResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "500":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Internal Server Error
       security:
       - ApiKeyAuth: []
@@ -1457,25 +1684,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "409":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Already connected
         "500":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Internal Server Error
       security:
       - ApiKeyAuth: []
@@ -1490,7 +1717,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
       security:
       - ApiKeyAuth: []
@@ -1505,7 +1732,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
       security:
       - ApiKeyAuth: []
@@ -1520,7 +1747,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/StatusResponse'
           description: OK
       security:
       - ApiKeyAuth: []
@@ -1542,25 +1769,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/AvatarResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "404":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Not Found
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1582,19 +1809,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/CheckUserResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1616,25 +1843,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/UserInfoResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
         "404":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Not Found
         "503":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
       security:
       - ApiKeyAuth: []
@@ -1649,7 +1876,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/MessageResponse'
           description: OK
       security:
       - ApiKeyAuth: []
@@ -1663,7 +1890,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/WebhookResponse'
           description: OK
       security:
       - ApiKeyAuth: []
@@ -1684,13 +1911,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/WebhookResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
       security:
       - ApiKeyAuth: []
@@ -1711,13 +1938,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/WebhookResponse'
           description: OK
         "400":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Response'
+                $ref: '#/components/schemas/ErrorResponse'
           description: Bad Request
       security:
       - ApiKeyAuth: []

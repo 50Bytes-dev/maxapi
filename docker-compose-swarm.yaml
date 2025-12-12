@@ -13,8 +13,7 @@ services:
             - DB_HOST=db
             - DB_PORT=${DB_PORT:-5432}
             - TZ=${TZ:-America/Sao_Paulo}
-            - MAXAPI_MAXAPI_WEBHOOK_FORMAT=${MAXAPI_MAXAPI_WEBHOOK_FORMAT:-json}
-            - MAXAPI_SESSION_DEVICE_NAME=${MAXAPI_SESSION_DEVICE_NAME:-MaxAPI}
+            - MAXAPI_WEBHOOK_FORMAT=${MAXAPI_WEBHOOK_FORMAT:-json}
             # RabbitMQ configuration Optional
             - RABBITMQ_URL=amqp://maxapi:maxapi@rabbitmq:5672/
             - RABBITMQ_QUEUE=max_events

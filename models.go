@@ -2,13 +2,177 @@ package main
 
 // Swagger model definitions for API documentation
 
-// Response represents a standard API response
-// @Description Standard API response format
-type Response struct {
-	Code    int         `json:"code" example:"200"`
-	Success bool        `json:"success" example:"true"`
-	Data    interface{} `json:"data,omitempty" swaggertype:"object"`
-	Error   string      `json:"error,omitempty"`
+// ========== BASE RESPONSE ==========
+
+// ErrorResponse represents an error response
+// @Description Error response format
+type ErrorResponse struct {
+	Success bool   `json:"success" example:"false"`
+	Error   string `json:"error" example:"error message"`
+}
+
+// MessageResponse represents a simple success response with message
+// @Description Simple success response with message
+type MessageResponse struct {
+	Success bool   `json:"success" example:"true"`
+	Message string `json:"message" example:"Operation completed"`
+}
+
+// ========== AUTH RESPONSES ==========
+
+// AuthRequestResponse represents the response for auth code request
+// @Description Response after requesting SMS verification code
+type AuthRequestResponse struct {
+	Success   bool   `json:"success" example:"true"`
+	Message   string `json:"message" example:"Verification code sent"`
+	TempToken string `json:"tempToken" example:"temp_token_value"`
+}
+
+// AuthConfirmResponse represents the response for auth code confirmation
+// @Description Response after confirming SMS verification code
+type AuthConfirmResponse struct {
+	Success              bool   `json:"success" example:"true"`
+	Message              string `json:"message" example:"Login successful"`
+	AuthToken            string `json:"authToken,omitempty" example:"auth_token_value"`
+	RegisterToken        string `json:"registerToken,omitempty" example:"register_token_value"`
+	RequiresRegistration bool   `json:"requiresRegistration" example:"false"`
+}
+
+// AuthRegisterResponse represents the response for user registration
+// @Description Response after successful registration
+type AuthRegisterResponse struct {
+	Success   bool   `json:"success" example:"true"`
+	Message   string `json:"message" example:"Registration successful"`
+	AuthToken string `json:"authToken" example:"auth_token_value"`
+}
+
+// ========== SESSION RESPONSES ==========
+
+// StatusResponse represents the connection status response
+// @Description Connection and authentication status
+type StatusResponse struct {
+	Success       bool  `json:"success" example:"true"`
+	Connected     bool  `json:"connected" example:"true"`
+	Authenticated bool  `json:"authenticated" example:"true"`
+	LoggedIn      bool  `json:"loggedIn" example:"true"`
+	MaxUserID     int64 `json:"maxUserID" example:"123456789"`
+}
+
+// ========== CHAT RESPONSES ==========
+
+// SendMessageResponse represents the response after sending a message
+// @Description Response after sending a message
+type SendMessageResponse struct {
+	Success   bool  `json:"success" example:"true"`
+	MessageID int64 `json:"messageId" example:"987654321"`
+	ChatID    int64 `json:"chatId,omitempty" example:"123456789"`
+}
+
+// DownloadMediaResponse represents the response for downloading media
+// @Description Response with downloaded media data
+type DownloadMediaResponse struct {
+	Success  bool   `json:"success" example:"true"`
+	Data     string `json:"data" example:"base64_encoded_data"`
+	MimeType string `json:"mimeType" example:"image/jpeg"`
+}
+
+// DownloadVideoResponse represents the response for downloading video
+// @Description Response with downloaded video data
+type DownloadVideoResponse struct {
+	Success  bool   `json:"success" example:"true"`
+	Data     string `json:"data" example:"base64_encoded_data"`
+	MimeType string `json:"mimeType" example:"video/mp4"`
+	URL      string `json:"url" example:"https://example.com/video.mp4"`
+}
+
+// ChatHistoryResponse represents the response for chat history
+// @Description Response with chat history messages
+type ChatHistoryResponse struct {
+	Success  bool                     `json:"success" example:"true"`
+	Messages []map[string]interface{} `json:"messages"`
+}
+
+// ========== USER RESPONSES ==========
+
+// CheckUserResultItem represents a single user check result
+// @Description Single user check result
+type CheckUserResultItem struct {
+	Phone     string `json:"phone" example:"79001234567"`
+	Exists    bool   `json:"exists" example:"true"`
+	MaxUserID int64  `json:"maxUserId" example:"123456789"`
+	Name      string `json:"name,omitempty" example:"John Doe"`
+}
+
+// CheckUserResponse represents the response for checking users
+// @Description Response with user existence check results
+type CheckUserResponse struct {
+	Success bool                  `json:"success" example:"true"`
+	Users   []CheckUserResultItem `json:"users"`
+}
+
+// UserInfoResponse represents the response for getting user info
+// @Description Response with user information
+type UserInfoResponse struct {
+	Success bool                   `json:"success" example:"true"`
+	User    map[string]interface{} `json:"user"`
+}
+
+// AvatarResponse represents the response for getting user avatar
+// @Description Response with user avatar URL
+type AvatarResponse struct {
+	Success   bool   `json:"success" example:"true"`
+	AvatarURL string `json:"avatarUrl" example:"https://example.com/avatar.jpg"`
+}
+
+// ========== GROUP RESPONSES ==========
+
+// GroupChatResponse represents the response with group/chat info
+// @Description Response with group or chat information
+type GroupChatResponse struct {
+	Success bool                   `json:"success" example:"true"`
+	Chat    map[string]interface{} `json:"chat"`
+}
+
+// InviteLinkResponse represents the response with invite link
+// @Description Response with group invite link
+type InviteLinkResponse struct {
+	Success    bool   `json:"success" example:"true"`
+	InviteLink string `json:"inviteLink" example:"https://max.ru/join/abc123"`
+}
+
+// ListGroupsResponse represents the response for listing groups
+// @Description Response with list of groups and channels
+type ListGroupsResponse struct {
+	Success  bool                     `json:"success" example:"true"`
+	Groups   []map[string]interface{} `json:"groups"`
+	Channels []map[string]interface{} `json:"channels"`
+}
+
+// ========== WEBHOOK RESPONSES ==========
+
+// WebhookResponse represents the response for webhook operations
+// @Description Response with webhook URL
+type WebhookResponse struct {
+	Success bool   `json:"success" example:"true"`
+	Webhook string `json:"webhook" example:"https://example.com/webhook"`
+}
+
+// ========== ADMIN RESPONSES ==========
+
+// AddUserResponse represents the response for adding a user
+// @Description Response after creating a new user
+type AddUserResponse struct {
+	Success bool   `json:"success" example:"true"`
+	ID      string `json:"id" example:"a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0"`
+	Token   string `json:"token" example:"abc123def456"`
+	Name    string `json:"name" example:"John Doe"`
+}
+
+// ListUsersResponse represents the response for listing users
+// @Description Response with list of users
+type ListUsersResponse struct {
+	Success bool           `json:"success" example:"true"`
+	Data    []UserResponse `json:"data"`
 }
 
 // AuthRequestBody represents the request body for SMS code request

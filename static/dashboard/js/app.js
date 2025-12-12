@@ -801,7 +801,7 @@ async function performDelete(id) {
     const myHeaders = new Headers();
     myHeaders.append('authorization', admintoken);
     myHeaders.append('Content-Type', 'application/json');
-    res = await fetch(baseUrl + '/admin/users/' + id + '/full', {
+    res = await fetch(baseUrl + '/admin/users/' + id, {
         method: 'DELETE',
         headers: myHeaders,
     });

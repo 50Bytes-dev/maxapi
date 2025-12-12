@@ -123,9 +123,9 @@ func (s *server) authalice(next http.Handler) http.Handler {
 // @Accept json
 // @Produce json
 // @Param request body AuthRequestBody true "Phone number and language"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 500 {object} Response
+// @Success 200 {object} AuthRequestResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /session/auth/request [post]
 func (s *server) AuthRequest() http.HandlerFunc {
@@ -209,8 +209,8 @@ func (s *server) AuthRequest() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body AuthConfirmBody true "SMS code"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
+// @Success 200 {object} AuthConfirmResponse
+// @Failure 400 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /session/auth/confirm [post]
 func (s *server) AuthConfirm() http.HandlerFunc {
@@ -293,8 +293,8 @@ func (s *server) AuthConfirm() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body AuthRegisterBody true "User registration data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
+// @Success 200 {object} AuthRegisterResponse
+// @Failure 400 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /session/auth/register [post]
 func (s *server) AuthRegister() http.HandlerFunc {
@@ -365,10 +365,10 @@ func (s *server) AuthRegister() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body ConnectBody true "Connection options"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 409 {object} Response "Already connected"
-// @Failure 500 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Already connected"
+// @Failure 500 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /session/connect [post]
 func (s *server) Connect() http.HandlerFunc {
@@ -441,7 +441,7 @@ func (s *server) Connect() http.HandlerFunc {
 // @Description Closes connection to MAX servers
 // @Tags Session
 // @Produce json
-// @Success 200 {object} Response
+// @Success 200 {object} MessageResponse
 // @Security ApiKeyAuth
 // @Router /session/disconnect [post]
 func (s *server) Disconnect() http.HandlerFunc {
@@ -471,7 +471,7 @@ func (s *server) Disconnect() http.HandlerFunc {
 // @Description Logs out from MAX and clears auth token
 // @Tags Session
 // @Produce json
-// @Success 200 {object} Response
+// @Success 200 {object} MessageResponse
 // @Security ApiKeyAuth
 // @Router /session/logout [post]
 func (s *server) Logout() http.HandlerFunc {
@@ -511,7 +511,7 @@ func (s *server) Logout() http.HandlerFunc {
 // @Description Returns connection and authentication status
 // @Tags Session
 // @Produce json
-// @Success 200 {object} Response
+// @Success 200 {object} StatusResponse
 // @Security ApiKeyAuth
 // @Router /session/status [get]
 func (s *server) GetStatus() http.HandlerFunc {
@@ -552,9 +552,9 @@ func (s *server) GetStatus() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body MessageBody true "Message data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response "Not connected"
+// @Success 200 {object} SendMessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse "Not connected"
 // @Security ApiKeyAuth
 // @Router /chat/send/text [post]
 func (s *server) SendMessage() http.HandlerFunc {
@@ -616,9 +616,9 @@ func (s *server) SendMessage() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body EditMessageBody true "Edit data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/send/edit [post]
 func (s *server) SendEditMessage() http.HandlerFunc {
@@ -665,9 +665,9 @@ func (s *server) SendEditMessage() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body MarkReadBody true "Mark read data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/markread [post]
 func (s *server) MarkRead() http.HandlerFunc {
@@ -714,9 +714,9 @@ func (s *server) MarkRead() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body DeleteMessageBody true "Delete data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/delete [post]
 func (s *server) DeleteMessage() http.HandlerFunc {
@@ -760,9 +760,9 @@ func (s *server) DeleteMessage() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body ImageBody true "Image data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} SendMessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/send/image [post]
 func (s *server) SendImage() http.HandlerFunc {
@@ -821,9 +821,9 @@ func (s *server) SendImage() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body DocumentBody true "Document data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} SendMessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/send/document [post]
 func (s *server) SendDocument() http.HandlerFunc {
@@ -886,9 +886,9 @@ func (s *server) SendDocument() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body AudioBody true "Audio data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} SendMessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/send/audio [post]
 func (s *server) SendAudio() http.HandlerFunc {
@@ -951,9 +951,9 @@ func (s *server) SendAudio() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body VideoBody true "Video data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} SendMessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/send/video [post]
 func (s *server) SendVideo() http.HandlerFunc {
@@ -1016,9 +1016,9 @@ func (s *server) SendVideo() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body DownloadBody true "URL"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 500 {object} Response
+// @Success 200 {object} DownloadMediaResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/downloadimage [post]
 func (s *server) DownloadImage() http.HandlerFunc {
@@ -1060,9 +1060,9 @@ func (s *server) DownloadImage() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body DownloadFileBody true "File info"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} DownloadMediaResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/downloaddocument [post]
 func (s *server) DownloadDocument() http.HandlerFunc {
@@ -1113,9 +1113,9 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body DownloadFileBody true "Video info"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} DownloadVideoResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/downloadvideo [post]
 func (s *server) DownloadVideo() http.HandlerFunc {
@@ -1167,9 +1167,9 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body DownloadFileBody true "Audio info"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} DownloadMediaResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/downloadaudio [post]
 func (s *server) DownloadAudio() http.HandlerFunc {
@@ -1185,9 +1185,9 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body CheckUserBody true "Phone numbers"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} CheckUserResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /user/check [post]
 func (s *server) CheckUser() http.HandlerFunc {
@@ -1242,10 +1242,10 @@ func (s *server) CheckUser() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body UserInfoBody true "User ID"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 404 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} UserInfoResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /user/info [post]
 func (s *server) GetUser() http.HandlerFunc {
@@ -1287,10 +1287,10 @@ func (s *server) GetUser() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body UserInfoBody true "User ID"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 404 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} AvatarResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /user/avatar [post]
 func (s *server) GetAvatar() http.HandlerFunc {
@@ -1334,9 +1334,9 @@ func (s *server) GetAvatar() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body PresenceBody true "Chat ID"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/presence [post]
 func (s *server) SendPresence() http.HandlerFunc {
@@ -1381,9 +1381,9 @@ func (s *server) SendPresence() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body CreateGroupBody true "Group data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} GroupChatResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/create [post]
 func (s *server) CreateGroup() http.HandlerFunc {
@@ -1425,10 +1425,10 @@ func (s *server) CreateGroup() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body GroupInfoBody true "Chat ID"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 404 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} GroupChatResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/info [post]
 func (s *server) GetGroupInfo() http.HandlerFunc {
@@ -1470,10 +1470,10 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body GroupInfoBody true "Chat ID"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 404 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} InviteLinkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/invitelink [post]
 func (s *server) GetGroupInviteLink() http.HandlerFunc {
@@ -1515,9 +1515,9 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body GroupJoinBody true "Invite link"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} GroupChatResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/join [post]
 func (s *server) GroupJoin() http.HandlerFunc {
@@ -1559,9 +1559,9 @@ func (s *server) GroupJoin() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body GroupInfoBody true "Chat ID"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/leave [post]
 func (s *server) GroupLeave() http.HandlerFunc {
@@ -1603,9 +1603,9 @@ func (s *server) GroupLeave() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body UpdateParticipantsBody true "Participants data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/updateparticipants [post]
 func (s *server) UpdateGroupParticipants() http.HandlerFunc {
@@ -1653,9 +1653,9 @@ func (s *server) UpdateGroupParticipants() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body GroupNameBody true "Group name"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/name [post]
 func (s *server) SetGroupName() http.HandlerFunc {
@@ -1697,9 +1697,9 @@ func (s *server) SetGroupName() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body GroupTopicBody true "Group topic"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/topic [post]
 func (s *server) SetGroupTopic() http.HandlerFunc {
@@ -1739,8 +1739,8 @@ func (s *server) SetGroupTopic() http.HandlerFunc {
 // @Description Lists all groups and channels
 // @Tags Group
 // @Produce json
-// @Success 200 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} ListGroupsResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /group/list [get]
 func (s *server) ListGroups() http.HandlerFunc {
@@ -1771,7 +1771,7 @@ func (s *server) ListGroups() http.HandlerFunc {
 // @Description Returns current webhook URL
 // @Tags Webhook
 // @Produce json
-// @Success 200 {object} Response
+// @Success 200 {object} WebhookResponse
 // @Security ApiKeyAuth
 // @Router /webhook [get]
 func (s *server) GetWebhook() http.HandlerFunc {
@@ -1794,8 +1794,8 @@ func (s *server) GetWebhook() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body WebhookBody true "Webhook URL"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
+// @Success 200 {object} WebhookResponse
+// @Failure 400 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /webhook [post]
 func (s *server) SetWebhook() http.HandlerFunc {
@@ -1835,8 +1835,8 @@ func (s *server) SetWebhook() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body WebhookBody true "Webhook URL"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
+// @Success 200 {object} WebhookResponse
+// @Failure 400 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /webhook [put]
 func (s *server) UpdateWebhook() http.HandlerFunc {
@@ -1848,7 +1848,7 @@ func (s *server) UpdateWebhook() http.HandlerFunc {
 // @Description Removes the webhook URL
 // @Tags Webhook
 // @Produce json
-// @Success 200 {object} Response
+// @Success 200 {object} MessageResponse
 // @Security ApiKeyAuth
 // @Router /webhook [delete]
 func (s *server) DeleteWebhook() http.HandlerFunc {
@@ -1883,9 +1883,9 @@ func (s *server) DeleteWebhook() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body ChatHistoryBody true "History parameters"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} ChatHistoryResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/history [post]
 func (s *server) GetChatHistory() http.HandlerFunc {
@@ -1934,9 +1934,9 @@ func (s *server) GetChatHistory() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body ReactBody true "Reaction data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 503 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/react [post]
 func (s *server) React() http.HandlerFunc {
@@ -1984,8 +1984,8 @@ func (s *server) React() http.HandlerFunc {
 // @Description Returns a list of all users in the system
 // @Tags Admin
 // @Produce json
-// @Success 200 {object} Response{data=[]UserResponse}
-// @Failure 500 {object} Response
+// @Success 200 {object} ListUsersResponse
+// @Failure 500 {object} ErrorResponse
 // @Security AdminAuth
 // @Router /admin/users [get]
 func (s *server) ListUsers() http.HandlerFunc {
@@ -2025,9 +2025,9 @@ func (s *server) ListUsers() http.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param request body AddUserBody true "User data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 500 {object} Response
+// @Success 200 {object} AddUserResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Security AdminAuth
 // @Router /admin/users [post]
 func (s *server) AddUser() http.HandlerFunc {
@@ -2069,9 +2069,9 @@ func (s *server) AddUser() http.HandlerFunc {
 // @Produce json
 // @Param userid path string true "User ID"
 // @Param request body EditUserBody true "User data"
-// @Success 200 {object} Response
-// @Failure 400 {object} Response
-// @Failure 500 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Security AdminAuth
 // @Router /admin/users/{userid} [put]
 func (s *server) EditUser() http.HandlerFunc {
@@ -2108,8 +2108,8 @@ func (s *server) EditUser() http.HandlerFunc {
 // @Tags Admin
 // @Produce json
 // @Param userid path string true "User ID"
-// @Success 200 {object} Response
-// @Failure 500 {object} Response
+// @Success 200 {object} MessageResponse
+// @Failure 500 {object} ErrorResponse
 // @Security AdminAuth
 // @Router /admin/users/{userid} [delete]
 func (s *server) DeleteUser() http.HandlerFunc {
