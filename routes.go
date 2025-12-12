@@ -117,6 +117,8 @@ func (s *server) routes() {
 	s.router.Handle("/chat/downloaddocument", c.Then(s.DownloadDocument())).Methods("POST")
 
 	// ========== USER ENDPOINTS ==========
+	s.router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
+	s.router.Handle("/user/chats", c.Then(s.GetAllChats())).Methods("GET")
 	s.router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
 	s.router.Handle("/user/info", c.Then(s.GetUser())).Methods("POST")
 	s.router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")

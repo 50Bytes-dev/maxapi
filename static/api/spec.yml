@@ -28,6 +28,33 @@ components:
           example: abc123def456
           type: string
       type: object
+    AllChatsResponse:
+      description: Response with all dialogs, groups and channels
+      properties:
+        channels:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
+        counts:
+          $ref: '#/components/schemas/ChatCounts'
+        dialogs:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
+        groups:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
+        success:
+          example: true
+          type: boolean
+      type: object
     AudioBody:
       properties:
         audio:
@@ -125,6 +152,19 @@ components:
           example: true
           type: boolean
       type: object
+    ChatCounts:
+      description: Counts of dialogs, groups and channels
+      properties:
+        channels:
+          example: 3
+          type: integer
+        dialogs:
+          example: 15
+          type: integer
+        groups:
+          example: 8
+          type: integer
+      type: object
     ChatHistoryBody:
       properties:
         chatId:
@@ -199,6 +239,22 @@ components:
             type: string
           type: array
           uniqueItems: false
+      type: object
+    ContactsResponse:
+      description: Response with list of contacts
+      properties:
+        contacts:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
+        count:
+          example: 42
+          type: integer
+        success:
+          example: true
+          type: boolean
       type: object
     CreateGroupBody:
       properties:
@@ -1794,6 +1850,27 @@ paths:
       summary: Get user avatar
       tags:
       - User
+  /user/chats:
+    get:
+      description: Returns all dialogs, groups and channels
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllChatsResponse'
+          description: OK
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+      security:
+      - ApiKeyAuth: []
+      summary: Get all chats
+      tags:
+      - User
   /user/check:
     post:
       description: Checks if phone numbers exist in MAX
@@ -1826,6 +1903,27 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Check user existence
+      tags:
+      - User
+  /user/contacts:
+    get:
+      description: Returns all contacts from MAX
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactsResponse'
+          description: OK
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+      security:
+      - ApiKeyAuth: []
+      summary: Get contacts
       tags:
       - User
   /user/info:

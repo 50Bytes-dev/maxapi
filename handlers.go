@@ -1235,6 +1235,78 @@ func (s *server) CheckUser() http.HandlerFunc {
 	}
 }
 
+// GetContacts returns all contacts
+// @Summary Get contacts
+// @Description Returns all contacts from MAX
+// @Tags User
+// @Produce json
+// @Success 200 {object} ContactsResponse
+// @Failure 503 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /user/contacts [get]
+func (s *server) GetContacts() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		client := clientManager.GetMaxClient(txtid)
+		if client == nil || !client.IsConnected() {
+			s.Respond(w, r, http.StatusServiceUnavailable, errors.New("not connected"))
+			return
+		}
+
+		// Direct request to MAX without caching
+		contacts, err := client.GetContacts()
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get contacts: %v", err))
+			return
+		}
+
+		response := map[string]interface{}{
+			"success":  true,
+			"contacts": contacts,
+			"count":    len(contacts),
+		}
+
+		s.Respond(w, r, http.StatusOK, response)
+	}
+}
+
+// GetAllChats returns all chats (dialogs, groups, channels)
+// @Summary Get all chats
+// @Description Returns all dialogs, groups and channels
+// @Tags User
+// @Produce json
+// @Success 200 {object} AllChatsResponse
+// @Failure 503 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /user/chats [get]
+func (s *server) GetAllChats() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		client := clientManager.GetMaxClient(txtid)
+		if client == nil || !client.IsConnected() {
+			s.Respond(w, r, http.StatusServiceUnavailable, errors.New("not connected"))
+			return
+		}
+
+		// Data from client memory (loaded during Login)
+		response := map[string]interface{}{
+			"success":  true,
+			"dialogs":  client.Dialogs,
+			"groups":   client.Chats,
+			"channels": client.Channels,
+			"counts": map[string]int{
+				"dialogs":  len(client.Dialogs),
+				"groups":   len(client.Chats),
+				"channels": len(client.Channels),
+			},
+		}
+
+		s.Respond(w, r, http.StatusOK, response)
+	}
+}
+
 // GetUser gets user info by ID
 // @Summary Get user info
 // @Description Gets user information by MAX user ID

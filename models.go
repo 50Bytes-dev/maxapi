@@ -124,6 +124,32 @@ type AvatarResponse struct {
 	AvatarURL string `json:"avatarUrl" example:"https://example.com/avatar.jpg"`
 }
 
+// ContactsResponse represents the response for getting contacts
+// @Description Response with list of contacts
+type ContactsResponse struct {
+	Success  bool                     `json:"success" example:"true"`
+	Contacts []map[string]interface{} `json:"contacts"`
+	Count    int                      `json:"count" example:"42"`
+}
+
+// AllChatsResponse represents the response for getting all chats
+// @Description Response with all dialogs, groups and channels
+type AllChatsResponse struct {
+	Success  bool                     `json:"success" example:"true"`
+	Dialogs  []map[string]interface{} `json:"dialogs"`
+	Groups   []map[string]interface{} `json:"groups"`
+	Channels []map[string]interface{} `json:"channels"`
+	Counts   ChatCounts               `json:"counts"`
+}
+
+// ChatCounts represents counts of different chat types
+// @Description Counts of dialogs, groups and channels
+type ChatCounts struct {
+	Dialogs  int `json:"dialogs" example:"15"`
+	Groups   int `json:"groups" example:"8"`
+	Channels int `json:"channels" example:"3"`
+}
+
 // ========== GROUP RESPONSES ==========
 
 // GroupChatResponse represents the response with group/chat info
