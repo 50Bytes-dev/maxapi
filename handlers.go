@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"maxapi/maxclient"
@@ -20,6 +21,10 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/vincent-petithory/dataurl"
 )
+
+// authTimeouts stores timers for auto-closing auth sessions after 5 minutes
+var authTimeouts = make(map[string]*time.Timer)
+var authTimeoutsMu sync.Mutex
 
 type Values struct {
 	m map[string]string
@@ -179,6 +184,26 @@ func (s *server) AuthRequest() http.HandlerFunc {
 		// Store client temporarily for auth flow
 		clientManager.SetMaxClient(txtid, client)
 
+		// Start ping loop to keep connection alive during auth flow
+		client.StartPingLoop()
+
+		// Set 5-minute timeout to auto-close auth session
+		authTimeoutsMu.Lock()
+		if oldTimer := authTimeouts[txtid]; oldTimer != nil {
+			oldTimer.Stop()
+		}
+		authTimeouts[txtid] = time.AfterFunc(5*time.Minute, func() {
+			log.Info().Str("userID", txtid).Msg("Auth session timed out after 5 minutes")
+			if c := clientManager.GetMaxClient(txtid); c != nil {
+				c.Close()
+				clientManager.DeleteMaxClient(txtid)
+			}
+			authTimeoutsMu.Lock()
+			delete(authTimeouts, txtid)
+			authTimeoutsMu.Unlock()
+		})
+		authTimeoutsMu.Unlock()
+
 		// Send webhook event
 		if mycli := clientManager.GetMyClient(txtid); mycli != nil {
 			postmap := map[string]interface{}{
@@ -217,6 +242,14 @@ func (s *server) AuthConfirm() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		token := r.Context().Value("userinfo").(Values).Get("Token")
+
+		// Cancel auth timeout
+		authTimeoutsMu.Lock()
+		if timer := authTimeouts[txtid]; timer != nil {
+			timer.Stop()
+			delete(authTimeouts, txtid)
+		}
+		authTimeoutsMu.Unlock()
 
 		decoder := json.NewDecoder(r.Body)
 		var body AuthConfirmBody
@@ -301,6 +334,14 @@ func (s *server) AuthRegister() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		token := r.Context().Value("userinfo").(Values).Get("Token")
+
+		// Cancel auth timeout
+		authTimeoutsMu.Lock()
+		if timer := authTimeouts[txtid]; timer != nil {
+			timer.Stop()
+			delete(authTimeouts, txtid)
+		}
+		authTimeoutsMu.Unlock()
 
 		decoder := json.NewDecoder(r.Body)
 		var body AuthRegisterBody
@@ -538,6 +579,115 @@ func (s *server) GetStatus() http.HandlerFunc {
 			"loggedIn":      connected && authenticated,
 			"maxUserID":     maxUserID,
 		}
+
+		s.Respond(w, r, http.StatusOK, response)
+	}
+}
+
+// RequestSync reconnects and returns fresh sync data
+// @Summary Request sync
+// @Description Reconnects to MAX server and returns fresh profile, chats, contacts data. Also sends Sync event to webhook
+// @Tags Session
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse "No auth token"
+// @Failure 500 {object} ErrorResponse "Sync failed"
+// @Security ApiKeyAuth
+// @Router /session/sync [post]
+func (s *server) RequestSync() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		token := r.Context().Value("userinfo").(Values).Get("Token")
+
+		// Get auth token and device ID from DB
+		var authToken, deviceID string
+		err := s.db.QueryRow("SELECT auth_token, device_id FROM users WHERE id=$1", txtid).Scan(&authToken, &deviceID)
+		if err != nil || authToken == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("no auth token found, please authenticate first"))
+			return
+		}
+
+		// Stop existing client goroutine and disconnect
+		if ch := killchannel[txtid]; ch != nil {
+			select {
+			case ch <- true:
+			default:
+			}
+		}
+		oldClient := clientManager.GetMaxClient(txtid)
+		if oldClient != nil {
+			oldClient.Disconnect()
+		}
+		// Small delay to let old goroutine clean up
+		time.Sleep(100 * time.Millisecond)
+
+		// Create new client and connect
+		logger := log.With().Str("userID", txtid).Logger()
+		client := maxclient.NewClient(deviceID, logger)
+
+		syncData, err := client.ConnectAndLogin(authToken, nil)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("sync failed: %v", err))
+			return
+		}
+
+		// Update client manager
+		clientManager.SetMaxClient(txtid, client)
+
+		// Update MyClient wrapper
+		mycli := clientManager.GetMyClient(txtid)
+		if mycli != nil {
+			mycli.MaxClient = client
+		} else {
+			// Create new MyClient if not exists
+			mycli = &MyClient{
+				MaxClient:     client,
+				userID:        txtid,
+				token:         token,
+				subscriptions: []string{},
+				db:            s.db,
+				s:             s,
+			}
+			clientManager.SetMyClient(txtid, mycli)
+		}
+
+		// Set event handler
+		client.SetEventHandler(func(event maxclient.Event) {
+			mycli.handleEvent(event)
+		})
+
+		// Update DB
+		_, err = s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, txtid)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to update connected status")
+		}
+
+		// Create new kill channel and start background goroutine for reconnects
+		killchannel[txtid] = make(chan bool)
+		go s.maintainConnection(txtid, authToken, deviceID, token, mycli)
+
+		// Build response with raw sync data
+		response := map[string]interface{}{
+			"success":   true,
+			"maxUserID": client.MaxUserID,
+		}
+		for key, value := range syncData {
+			response[key] = value
+		}
+
+		// Send Sync event to webhook
+		postmap := map[string]interface{}{
+			"type":      "Sync",
+			"reconnect": false,
+			"manual":    true,
+			"maxUserID": client.MaxUserID,
+		}
+		for key, value := range syncData {
+			if key != "type" {
+				postmap[key] = value
+			}
+		}
+		sendEventWithWebHook(mycli, postmap, "")
 
 		s.Respond(w, r, http.StatusOK, response)
 	}

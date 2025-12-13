@@ -5,6 +5,32 @@ import (
 	"time"
 )
 
+// GetChatsList gets list of chats with marker for pagination
+func (c *Client) GetChatsList(marker float64) ([]map[string]interface{}, error) {
+	payload := map[string]interface{}{
+		"marker": marker,
+	}
+
+	c.Logger.Info().Float64("marker", marker).Msg("Fetching chats list")
+
+	resp, err := c.sendAndWait(OpChatsList, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var chats []map[string]interface{}
+	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
+		for _, chatRaw := range chatsRaw {
+			if chat, ok := chatRaw.(map[string]interface{}); ok {
+				chats = append(chats, chat)
+			}
+		}
+	}
+
+	c.Logger.Info().Int("count", len(chats)).Msg("Fetched chats")
+	return chats, nil
+}
+
 // GetChatHistory gets message history for a chat
 func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backward int) ([]Message, error) {
 	if fromTime == 0 {

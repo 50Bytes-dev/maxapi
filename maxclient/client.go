@@ -117,8 +117,23 @@ func (c *Client) Connect() error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
+	// If there's a dead connection (conn exists but not connected), close it first
+	if c.conn != nil && !c.IsConnected() {
+		c.Logger.Info().Msg("Closing dead connection before reconnect")
+		c.conn.Close()
+		c.conn = nil
+	}
+
 	if c.conn != nil {
 		return nil // Already connected
+	}
+
+	// Create new context if the old one was cancelled (after Close())
+	select {
+	case <-c.ctx.Done():
+		c.ctx, c.cancel = context.WithCancel(context.Background())
+		c.Logger.Debug().Msg("Created new context for reconnect")
+	default:
 	}
 
 	c.Logger.Info().Str("uri", WebSocketURI).Msg("Connecting to MAX WebSocket")

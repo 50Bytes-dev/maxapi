@@ -200,6 +200,30 @@
           "response": []
         },
         {
+          "name": "Request Sync",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/session/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "session",
+                "sync"
+              ]
+            },
+            "description": "Reconnects to MAX server and returns fresh profile, chats, contacts data. Also sends Sync event to webhook."
+          },
+          "response": []
+        },
+        {
           "name": "Get QR Code",
           "request": {
             "method": "GET",

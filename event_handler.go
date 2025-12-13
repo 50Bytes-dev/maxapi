@@ -409,6 +409,13 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 			}
 			return
 		default:
+			// Check if this client was replaced by another goroutine (e.g., RequestSync)
+			currentClient := clientManager.GetMaxClient(userID)
+			if currentClient != nil && currentClient != client {
+				log.Info().Str("userid", userID).Msg("Client replaced, exiting startClient goroutine")
+				return
+			}
+
 			if !client.IsConnected() {
 				reconnectAttempts++
 
@@ -443,8 +450,18 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 
 				time.Sleep(reconnectDelay)
 
-				// Try to reconnect using Sync (not Login) since user is already authenticated
-				syncData, err := client.ConnectAndSync(nil)
+				// Check again if client was replaced during the delay
+				currentClient := clientManager.GetMaxClient(userID)
+				if currentClient != nil && currentClient != client {
+					log.Info().Str("userid", userID).Msg("Client replaced during reconnect delay, exiting")
+					return
+				}
+
+				// Close old dead connection before creating new one
+				client.Close()
+
+				// Reconnect using Login (Sync opcode 21 has server-side bugs)
+				syncData, err := client.ConnectAndLogin(authToken, nil)
 				if err != nil {
 					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
 					continue
@@ -475,6 +492,101 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 				sendEventWithWebHook(mycli, postmap, "")
 			} else {
 				// Reset reconnect counter on successful connection
+				reconnectAttempts = 0
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+// maintainConnection keeps client connected with auto-reconnect
+// Used after manual sync to maintain the connection
+func (s *server) maintainConnection(userID string, authToken string, deviceID string, token string, mycli *MyClient) {
+	client := clientManager.GetMaxClient(userID)
+	if client == nil {
+		return
+	}
+
+	reconnectAttempts := 0
+	maxReconnectAttempts := 120
+	reconnectDelay := 5 * time.Second
+
+	for {
+		select {
+		case <-killchannel[userID]:
+			log.Info().Str("userid", userID).Msg("Received kill signal (maintainConnection)")
+			client.Disconnect()
+			cleanupClient(userID)
+			s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
+			return
+		default:
+			// Get current client from manager (might have been replaced)
+			currentClient := clientManager.GetMaxClient(userID)
+			if currentClient != client {
+				// Client was replaced, exit this goroutine
+				log.Info().Str("userid", userID).Msg("Client replaced, exiting maintainConnection")
+				return
+			}
+
+			if !client.IsConnected() {
+				reconnectAttempts++
+
+				if reconnectAttempts > maxReconnectAttempts {
+					log.Error().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Max reconnect attempts reached")
+					cleanupClient(userID)
+					postmap := map[string]interface{}{
+						"type":   "Disconnected",
+						"reason": "max_reconnect_attempts",
+					}
+					sendEventWithWebHook(mycli, postmap, "")
+					s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
+					return
+				}
+
+				if reconnectAttempts == 1 || reconnectAttempts%10 == 0 {
+					log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Msg("Reconnecting...")
+					postmap := map[string]interface{}{
+						"type":    "Reconnecting",
+						"attempt": reconnectAttempts,
+						"max":     maxReconnectAttempts,
+					}
+					sendEventWithWebHook(mycli, postmap, "")
+				}
+
+				time.Sleep(reconnectDelay)
+
+				// Check if client was replaced during the delay
+				currentClient := clientManager.GetMaxClient(userID)
+				if currentClient != nil && currentClient != client {
+					log.Info().Str("userid", userID).Msg("Client replaced during reconnect delay, exiting maintainConnection")
+					return
+				}
+
+				// Close old dead connection before creating new one
+				client.Close()
+
+				syncData, err := client.ConnectAndLogin(authToken, nil)
+				if err != nil {
+					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
+					continue
+				}
+
+				log.Info().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Reconnected")
+				reconnectAttempts = 0
+				s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID)
+
+				postmap := map[string]interface{}{
+					"type":      "Sync",
+					"reconnect": true,
+					"maxUserID": client.MaxUserID,
+				}
+				for key, value := range syncData {
+					if key != "type" {
+						postmap[key] = value
+					}
+				}
+				sendEventWithWebHook(mycli, postmap, "")
+			} else {
 				reconnectAttempts = 0
 			}
 			time.Sleep(1 * time.Second)

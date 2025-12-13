@@ -202,6 +202,10 @@ func (c *Client) Login(authToken string) (map[string]interface{}, error) {
 
 // Sync performs sync without re-login (for reconnects) using opcode 21
 func (c *Client) Sync() (map[string]interface{}, error) {
+	if c.AuthToken == "" {
+		return nil, NewError("no_token", "Auth token not set", "Sync Error")
+	}
+
 	payload := map[string]interface{}{
 		"chatsCount":   100,
 		"chatsSync":    0,
@@ -209,9 +213,10 @@ func (c *Client) Sync() (map[string]interface{}, error) {
 		"draftsSync":   0,
 		"interactive":  true,
 		"presenceSync": -1,
+		"token":        c.AuthToken, // Token required for sync
 	}
 
-	c.Logger.Info().Msg("Syncing data (reconnect)")
+	c.Logger.Info().Msg("Syncing data")
 
 	resp, err := c.sendAndWait(OpSync, payload)
 	if err != nil {

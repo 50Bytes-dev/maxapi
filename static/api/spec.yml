@@ -1688,6 +1688,29 @@ paths:
       summary: Get connection status
       tags:
       - Session
+  /session/sync:
+    post:
+      description: Manually triggers synchronization with MAX server and returns current
+        profile, chats, contacts
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                additionalProperties: {}
+                type: object
+          description: OK
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not connected
+      security:
+      - ApiKeyAuth: []
+      summary: Trigger sync
+      tags:
+      - Session
   /user/check:
     post:
       description: Checks if phone numbers exist in MAX

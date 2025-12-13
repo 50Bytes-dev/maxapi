@@ -83,6 +83,7 @@ func (s *server) routes() {
 	s.router.Handle("/session/disconnect", c.Then(s.Disconnect())).Methods("POST")
 	s.router.Handle("/session/logout", c.Then(s.Logout())).Methods("POST")
 	s.router.Handle("/session/status", c.Then(s.GetStatus())).Methods("GET")
+	s.router.Handle("/session/sync", c.Then(s.RequestSync())).Methods("POST")
 	// Removed: /session/qr - MAX uses SMS auth
 	// Removed: /session/pairphone - MAX uses SMS auth
 
