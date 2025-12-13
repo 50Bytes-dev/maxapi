@@ -14,18 +14,18 @@ import (
 
 const (
 	// WebSocket endpoint
-	WebSocketURI = "wss://ws-api.oneme.ru/websocket"
+	WebSocketURI    = "wss://ws-api.oneme.ru/websocket"
 	WebSocketOrigin = "https://web.max.ru"
-	
+
 	// Protocol version for WebSocket
 	ProtocolVersion = 11
-	
+
 	// Default timeouts
-	DefaultTimeout      = 30 * time.Second
-	PingInterval        = 30 * time.Second
-	ReconnectDelay      = 1 * time.Second
-	MaxReconnectDelay   = 60 * time.Second
-	
+	DefaultTimeout    = 30 * time.Second
+	PingInterval      = 30 * time.Second
+	ReconnectDelay    = 1 * time.Second
+	MaxReconnectDelay = 60 * time.Second
+
 	// Circuit breaker
 	MaxConsecutiveErrors = 10
 	CircuitBreakerReset  = 60 * time.Second
@@ -34,47 +34,47 @@ const (
 // Client represents a MAX API client
 type Client struct {
 	// Connection
-	conn     *websocket.Conn
-	connMu   sync.RWMutex
-	
+	conn   *websocket.Conn
+	connMu sync.RWMutex
+
 	// Authentication
 	DeviceID  string
 	AuthToken string
 	MaxUserID int64
 	Me        *Me
-	
+
 	// State
 	seq           int32
 	isConnected   bool
 	isConnectedMu sync.RWMutex
-	
+
 	// Pending requests
 	pending   map[int]chan *Response
 	pendingMu sync.RWMutex
-	
+
 	// File upload waiters
 	fileWaiters   map[int64]chan *Response
 	fileWaitersMu sync.Mutex
-	
+
 	// User cache
 	users   map[int64]*User
 	usersMu sync.RWMutex
-	
+
 	// Event handling
 	eventHandler func(Event)
-	
+
 	// Circuit breaker
 	errorCount       int
 	lastErrorTime    time.Time
 	circuitBreakerMu sync.Mutex
-	
+
 	// Context for cancellation
-	ctx        context.Context
-	cancel     context.CancelFunc
-	
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	// Logger
 	Logger zerolog.Logger
-	
+
 	// Background tasks
 	wg sync.WaitGroup
 }
@@ -83,13 +83,13 @@ type Client struct {
 func NewClient(deviceID string, logger zerolog.Logger) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Client{
-		DeviceID:     deviceID,
-		pending:      make(map[int]chan *Response),
-		fileWaiters:  make(map[int64]chan *Response),
-		users:        make(map[int64]*User),
-		ctx:          ctx,
-		cancel:       cancel,
-		Logger:       logger,
+		DeviceID:    deviceID,
+		pending:     make(map[int]chan *Response),
+		fileWaiters: make(map[int64]chan *Response),
+		users:       make(map[int64]*User),
+		ctx:         ctx,
+		cancel:      cancel,
+		Logger:      logger,
 	}
 }
 
@@ -116,34 +116,34 @@ func (c *Client) setConnected(connected bool) {
 func (c *Client) Connect() error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
-	
+
 	if c.conn != nil {
 		return nil // Already connected
 	}
-	
+
 	c.Logger.Info().Str("uri", WebSocketURI).Msg("Connecting to MAX WebSocket")
-	
+
 	dialer := websocket.Dialer{
 		HandshakeTimeout: DefaultTimeout,
 	}
-	
+
 	header := http.Header{}
 	header.Set("Origin", WebSocketOrigin)
 	header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-	
+
 	conn, _, err := dialer.Dial(WebSocketURI, header)
 	if err != nil {
 		c.Logger.Error().Err(err).Msg("Failed to connect to WebSocket")
 		return err
 	}
-	
+
 	c.conn = conn
 	c.setConnected(true)
-	
+
 	// Start receive loop
 	c.wg.Add(1)
 	go c.receiveLoop()
-	
+
 	c.Logger.Info().Msg("WebSocket connected")
 	return nil
 }
@@ -151,19 +151,19 @@ func (c *Client) Connect() error {
 // Close closes the client connection
 func (c *Client) Close() error {
 	c.Logger.Info().Msg("Closing client")
-	
+
 	c.cancel()
 	c.setConnected(false)
-	
+
 	c.connMu.Lock()
 	if c.conn != nil {
 		err := c.conn.Close()
 		c.conn = nil
 		c.connMu.Unlock()
-		
+
 		// Wait for goroutines to finish
 		c.wg.Wait()
-		
+
 		// Clear pending requests
 		c.pendingMu.Lock()
 		for seq, ch := range c.pending {
@@ -171,11 +171,11 @@ func (c *Client) Close() error {
 			delete(c.pending, seq)
 		}
 		c.pendingMu.Unlock()
-		
+
 		return err
 	}
 	c.connMu.Unlock()
-	
+
 	return nil
 }
 
@@ -199,27 +199,27 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 	if !c.IsConnected() {
 		return nil, ErrNotConnected
 	}
-	
+
 	seq := c.nextSeq()
-	
+
 	// Create response channel
 	respCh := make(chan *Response, 1)
 	c.pendingMu.Lock()
 	c.pending[seq] = respCh
 	c.pendingMu.Unlock()
-	
+
 	defer func() {
 		c.pendingMu.Lock()
 		delete(c.pending, seq)
 		c.pendingMu.Unlock()
 	}()
-	
+
 	// Build message
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	msg := BaseMessage{
 		Ver:     ProtocolVersion,
 		Cmd:     0,
@@ -227,17 +227,17 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 		Opcode:  int(opcode),
 		Payload: payloadBytes,
 	}
-	
+
 	msgBytes, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	c.Logger.Debug().
 		Int("seq", seq).
 		Int("opcode", int(opcode)).
 		Msg("Sending message")
-	
+
 	// Send message
 	c.connMu.RLock()
 	if c.conn == nil {
@@ -246,24 +246,31 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 	}
 	err = c.conn.WriteMessage(websocket.TextMessage, msgBytes)
 	c.connMu.RUnlock()
-	
+
 	if err != nil {
 		c.Logger.Error().Err(err).Int("seq", seq).Msg("Failed to send message")
 		return nil, err
 	}
-	
+
 	// Wait for response
 	select {
 	case resp := <-respCh:
 		if resp == nil {
 			return nil, ErrNotConnected
 		}
-		
+
 		// Check for error in response
 		if err := ParseError(resp.Payload); err != nil {
+			// Log detailed error information for debugging
+			c.Logger.Error().
+				Err(err).
+				Int("opcode", resp.Opcode).
+				Int("seq", resp.Seq).
+				Interface("payload", resp.Payload).
+				Msg("Server returned error")
 			return resp, err
 		}
-		
+
 		return resp, nil
 	case <-time.After(timeout):
 		return nil, ErrTimeout
@@ -275,22 +282,22 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 // receiveLoop handles incoming WebSocket messages
 func (c *Client) receiveLoop() {
 	defer c.wg.Done()
-	
+
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
 		}
-		
+
 		c.connMu.RLock()
 		conn := c.conn
 		c.connMu.RUnlock()
-		
+
 		if conn == nil {
 			return
 		}
-		
+
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
@@ -301,23 +308,23 @@ func (c *Client) receiveLoop() {
 			c.setConnected(false)
 			return
 		}
-		
+
 		var resp Response
 		if err := json.Unmarshal(message, &resp); err != nil {
 			c.Logger.Warn().Err(err).Msg("Failed to parse message")
 			continue
 		}
-		
+
 		c.Logger.Debug().
 			Int("seq", resp.Seq).
 			Int("opcode", resp.Opcode).
 			Msg("Received message")
-		
+
 		// Check if this is a response to a pending request
 		c.pendingMu.RLock()
 		respCh, ok := c.pending[resp.Seq]
 		c.pendingMu.RUnlock()
-		
+
 		if ok {
 			select {
 			case respCh <- &resp:
@@ -333,19 +340,19 @@ func (c *Client) receiveLoop() {
 // handleNotification handles server-initiated notifications
 func (c *Client) handleNotification(resp *Response) {
 	opcode := Opcode(resp.Opcode)
-	
+
 	// Handle file upload notifications
 	if opcode == OpNotifAttach {
 		c.handleFileAttachNotification(resp)
 		return
 	}
-	
+
 	// Build event
 	event := Event{
 		Opcode:  opcode,
 		Payload: resp.Payload,
 	}
-	
+
 	// Determine event type
 	switch opcode {
 	case OpNotifMessage:
@@ -364,10 +371,12 @@ func (c *Client) handleNotification(resp *Response) {
 		event.Type = "PresenceUpdate"
 	case OpReconnect:
 		event.Type = "Disconnected"
+	case OpLogout:
+		event.Type = "LoggedOut"
 	default:
 		event.Type = "Unknown"
 	}
-	
+
 	if c.eventHandler != nil {
 		c.eventHandler(event)
 	}
@@ -379,7 +388,7 @@ func (c *Client) determineMessageEventType(payload map[string]interface{}) strin
 	if !ok {
 		message = payload
 	}
-	
+
 	status, _ := message["status"].(string)
 	switch MessageStatus(status) {
 	case MessageStatusEdited:
@@ -395,7 +404,7 @@ func (c *Client) determineMessageEventType(payload map[string]interface{}) strin
 func (c *Client) handleFileAttachNotification(resp *Response) {
 	c.fileWaitersMu.Lock()
 	defer c.fileWaitersMu.Unlock()
-	
+
 	// Check for fileId
 	if fileID, ok := resp.Payload["fileId"].(float64); ok {
 		if ch, exists := c.fileWaiters[int64(fileID)]; exists {
@@ -407,7 +416,7 @@ func (c *Client) handleFileAttachNotification(resp *Response) {
 			c.Logger.Debug().Int64("fileId", int64(fileID)).Msg("File upload completed")
 		}
 	}
-	
+
 	// Check for videoId
 	if videoID, ok := resp.Payload["videoId"].(float64); ok {
 		if ch, exists := c.fileWaiters[int64(videoID)]; exists {
@@ -425,7 +434,7 @@ func (c *Client) handleFileAttachNotification(resp *Response) {
 func (c *Client) registerFileWaiter(id int64) chan *Response {
 	c.fileWaitersMu.Lock()
 	defer c.fileWaitersMu.Unlock()
-	
+
 	ch := make(chan *Response, 1)
 	c.fileWaiters[id] = ch
 	return ch
@@ -443,10 +452,10 @@ func (c *Client) StartPingLoop() {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		
+
 		ticker := time.NewTicker(PingInterval)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-c.ctx.Done():
@@ -455,7 +464,7 @@ func (c *Client) StartPingLoop() {
 				if !c.IsConnected() {
 					return
 				}
-				
+
 				_, err := c.sendAndWait(OpPing, map[string]interface{}{
 					"interactive": true,
 				})
@@ -490,4 +499,3 @@ func (c *Client) cacheUser(user *User) {
 func GetDialogID(userID1, userID2 int64) int64 {
 	return userID1 ^ userID2
 }
-

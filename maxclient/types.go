@@ -62,7 +62,7 @@ type User struct {
 type Me struct {
 	ID            int64    `json:"id"`
 	AccountStatus int      `json:"accountStatus"`
-	Phone         string   `json:"phone"`
+	Phone         int64    `json:"phone"`
 	Names         []Name   `json:"names"`
 	UpdateTime    int64    `json:"updateTime"`
 	Options       []string `json:"options,omitempty"`

@@ -5,70 +5,16 @@ import (
 	"time"
 )
 
-// GetAllChats fetches all chats (dialogs, groups, channels)
-func (c *Client) GetAllChats() ([]Dialog, []Chat, []Chat, error) {
-	payload := map[string]interface{}{}
-	
-	c.Logger.Info().Msg("Fetching all chats")
-	
-	resp, err := c.sendAndWait(OpChatsList, payload)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	
-	var dialogs []Dialog
-	var groups []Chat
-	var channels []Chat
-	
-	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
-		for _, chatRaw := range chatsRaw {
-			chatMap, ok := chatRaw.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			
-			chatBytes, _ := json.Marshal(chatMap)
-			chatType, _ := chatMap["type"].(string)
-			
-			switch ChatType(chatType) {
-			case ChatTypeDialog:
-				var dialog Dialog
-				if err := json.Unmarshal(chatBytes, &dialog); err == nil {
-					dialogs = append(dialogs, dialog)
-				}
-			case ChatTypeChat:
-				var chat Chat
-				if err := json.Unmarshal(chatBytes, &chat); err == nil {
-					groups = append(groups, chat)
-				}
-			case ChatTypeChannel:
-				var channel Chat
-				if err := json.Unmarshal(chatBytes, &channel); err == nil {
-					channels = append(channels, channel)
-				}
-			}
-		}
-	}
-	
-	c.Logger.Info().
-		Int("dialogs", len(dialogs)).
-		Int("groups", len(groups)).
-		Int("channels", len(channels)).
-		Msg("Fetched chats")
-	
-	return dialogs, groups, channels, nil
-}
-
 // GetChatHistory gets message history for a chat
 func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backward int) ([]Message, error) {
 	if fromTime == 0 {
 		fromTime = time.Now().UnixMilli()
 	}
-	
+
 	if backward == 0 {
 		backward = 200
 	}
-	
+
 	payload := map[string]interface{}{
 		"chatId":      chatID,
 		"from":        fromTime,
@@ -76,23 +22,23 @@ func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backw
 		"backward":    backward,
 		"getMessages": true,
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Int("backward", backward).Msg("Fetching chat history")
-	
+
 	resp, err := c.sendAndWait(OpChatHistory, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var messages []Message
-	
+
 	if msgsRaw, ok := resp.Payload["messages"].([]interface{}); ok {
 		for _, msgRaw := range msgsRaw {
 			msgMap, ok := msgRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			msgBytes, _ := json.Marshal(msgMap)
 			var msg Message
 			if err := json.Unmarshal(msgBytes, &msg); err == nil {
@@ -100,7 +46,7 @@ func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backw
 			}
 		}
 	}
-	
+
 	c.Logger.Info().Int("count", len(messages)).Msg("Fetched messages")
 	return messages, nil
 }
@@ -110,23 +56,23 @@ func (c *Client) GetChatInfo(chatIDs []int64) ([]Chat, error) {
 	payload := map[string]interface{}{
 		"chatIds": chatIDs,
 	}
-	
+
 	c.Logger.Info().Ints64("chatIds", chatIDs).Msg("Getting chat info")
-	
+
 	resp, err := c.sendAndWait(OpChatInfo, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var chats []Chat
-	
+
 	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
 		for _, chatRaw := range chatsRaw {
 			chatMap, ok := chatRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			chatBytes, _ := json.Marshal(chatMap)
 			var chat Chat
 			if err := json.Unmarshal(chatBytes, &chat); err == nil {
@@ -134,7 +80,7 @@ func (c *Client) GetChatInfo(chatIDs []int64) ([]Chat, error) {
 			}
 		}
 	}
-	
+
 	return chats, nil
 }
 
@@ -144,11 +90,11 @@ func (c *Client) GetChat(chatID int64) (*Chat, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(chats) == 0 {
 		return nil, ErrChatNotFound
 	}
-	
+
 	return &chats[0], nil
 }
 
@@ -157,7 +103,7 @@ func (c *Client) CreateGroup(name string, participantIDs []int64, notify bool) (
 	if name == "" {
 		return nil, nil, NewError("invalid_name", "Group name is required", "Validation Error")
 	}
-	
+
 	// In MAX, groups are created by sending a special message with CONTROL attachment
 	message := map[string]interface{}{
 		"cid": time.Now().UnixMilli(),
@@ -171,22 +117,22 @@ func (c *Client) CreateGroup(name string, participantIDs []int64, notify bool) (
 			},
 		},
 	}
-	
+
 	payload := map[string]interface{}{
 		"notify":  notify,
 		"message": message,
 	}
-	
+
 	c.Logger.Info().Str("name", name).Ints64("participants", participantIDs).Msg("Creating group")
-	
+
 	resp, err := c.sendAndWait(OpMsgSend, payload)
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	var chat *Chat
 	var msg *Message
-	
+
 	// Parse chat from response
 	if chatRaw, ok := resp.Payload["chat"].(map[string]interface{}); ok {
 		chatBytes, _ := json.Marshal(chatRaw)
@@ -195,10 +141,10 @@ func (c *Client) CreateGroup(name string, participantIDs []int64, notify bool) (
 			chat = &c
 		}
 	}
-	
+
 	// Parse message from response
 	msg, _ = c.parseMessageFromResponse(resp.Payload)
-	
+
 	return chat, msg, nil
 }
 
@@ -209,18 +155,18 @@ func (c *Client) JoinGroup(link string) (*Chat, error) {
 	if idx := findSubstring(link, "join/"); idx != -1 {
 		joinPath = link[idx:]
 	}
-	
+
 	payload := map[string]interface{}{
 		"link": joinPath,
 	}
-	
+
 	c.Logger.Info().Str("link", link).Msg("Joining group")
-	
+
 	resp, err := c.sendAndWait(OpChatJoin, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if chatRaw, ok := resp.Payload["chat"].(map[string]interface{}); ok {
 		chatBytes, _ := json.Marshal(chatRaw)
 		var chat Chat
@@ -228,7 +174,7 @@ func (c *Client) JoinGroup(link string) (*Chat, error) {
 			return &chat, nil
 		}
 	}
-	
+
 	return nil, ErrChatNotFound
 }
 
@@ -237,9 +183,9 @@ func (c *Client) LeaveChat(chatID int64) error {
 	payload := map[string]interface{}{
 		"chatId": chatID,
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Msg("Leaving chat")
-	
+
 	_, err := c.sendAndWait(OpChatLeave, payload)
 	return err
 }
@@ -251,20 +197,20 @@ func (c *Client) UpdateGroupMembers(chatID int64, userIDs []int64, operation str
 		"userIds":   userIDs,
 		"operation": operation, // "add" or "remove"
 	}
-	
+
 	if operation == "add" {
 		payload["showHistory"] = showHistory
 	} else if operation == "remove" {
 		payload["cleanMsgPeriod"] = cleanMsgPeriod
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Str("operation", operation).Ints64("userIds", userIDs).Msg("Updating group members")
-	
+
 	resp, err := c.sendAndWait(OpChatMembersUpdate, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if chatRaw, ok := resp.Payload["chat"].(map[string]interface{}); ok {
 		chatBytes, _ := json.Marshal(chatRaw)
 		var chat Chat
@@ -272,7 +218,7 @@ func (c *Client) UpdateGroupMembers(chatID int64, userIDs []int64, operation str
 			return &chat, nil
 		}
 	}
-	
+
 	return nil, nil
 }
 
@@ -291,21 +237,21 @@ func (c *Client) UpdateChatProfile(chatID int64, name string, description string
 	payload := map[string]interface{}{
 		"chatId": chatID,
 	}
-	
+
 	if name != "" {
 		payload["theme"] = name
 	}
 	if description != "" {
 		payload["description"] = description
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Str("name", name).Msg("Updating chat profile")
-	
+
 	resp, err := c.sendAndWait(OpChatUpdate, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if chatRaw, ok := resp.Payload["chat"].(map[string]interface{}); ok {
 		chatBytes, _ := json.Marshal(chatRaw)
 		var chat Chat
@@ -313,7 +259,7 @@ func (c *Client) UpdateChatProfile(chatID int64, name string, description string
 			return &chat, nil
 		}
 	}
-	
+
 	return nil, nil
 }
 
@@ -322,30 +268,30 @@ func (c *Client) GetChatMembers(chatID int64, marker int64, count int) ([]Member
 	if count == 0 {
 		count = 50
 	}
-	
+
 	payload := map[string]interface{}{
 		"chatId": chatID,
 		"type":   "MEMBER",
 		"marker": marker,
 		"count":  count,
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Msg("Getting chat members")
-	
+
 	resp, err := c.sendAndWait(OpChatMembers, payload)
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	var members []Member
-	
+
 	if membersRaw, ok := resp.Payload["members"].([]interface{}); ok {
 		for _, memberRaw := range membersRaw {
 			memberMap, ok := memberRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			memberBytes, _ := json.Marshal(memberMap)
 			var member Member
 			if err := json.Unmarshal(memberBytes, &member); err == nil {
@@ -353,13 +299,13 @@ func (c *Client) GetChatMembers(chatID int64, marker int64, count int) ([]Member
 			}
 		}
 	}
-	
+
 	var nextMarker *int64
 	if markerVal, ok := resp.Payload["marker"].(float64); ok {
 		m := int64(markerVal)
 		nextMarker = &m
 	}
-	
+
 	return members, nextMarker, nil
 }
 
@@ -370,23 +316,23 @@ func (c *Client) SearchChatMembers(chatID int64, query string) ([]Member, error)
 		"type":   "MEMBER",
 		"query":  query,
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Str("query", query).Msg("Searching chat members")
-	
+
 	resp, err := c.sendAndWait(OpChatMembers, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var members []Member
-	
+
 	if membersRaw, ok := resp.Payload["members"].([]interface{}); ok {
 		for _, memberRaw := range membersRaw {
 			memberMap, ok := memberRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			memberBytes, _ := json.Marshal(memberMap)
 			var member Member
 			if err := json.Unmarshal(memberBytes, &member); err == nil {
@@ -394,7 +340,7 @@ func (c *Client) SearchChatMembers(chatID int64, query string) ([]Member, error)
 			}
 		}
 	}
-	
+
 	return members, nil
 }
 
@@ -404,14 +350,14 @@ func (c *Client) RevokeInviteLink(chatID int64) (*Chat, error) {
 		"chatId":            chatID,
 		"revokePrivateLink": true,
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Msg("Revoking invite link")
-	
+
 	resp, err := c.sendAndWait(OpChatUpdate, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if chatRaw, ok := resp.Payload["chat"].(map[string]interface{}); ok {
 		chatBytes, _ := json.Marshal(chatRaw)
 		var chat Chat
@@ -419,7 +365,7 @@ func (c *Client) RevokeInviteLink(chatID int64) (*Chat, error) {
 			return &chat, nil
 		}
 	}
-	
+
 	return nil, nil
 }
 
@@ -428,9 +374,9 @@ func (c *Client) DeleteChat(chatID int64) error {
 	payload := map[string]interface{}{
 		"chatId": chatID,
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Msg("Deleting chat")
-	
+
 	_, err := c.sendAndWait(OpChatDelete, payload)
 	return err
 }
@@ -440,9 +386,9 @@ func (c *Client) ClearChatHistory(chatID int64) error {
 	payload := map[string]interface{}{
 		"chatId": chatID,
 	}
-	
+
 	c.Logger.Info().Int64("chatId", chatID).Msg("Clearing chat history")
-	
+
 	_, err := c.sendAndWait(OpChatClear, payload)
 	return err
 }
@@ -456,4 +402,3 @@ func findSubstring(s, substr string) int {
 	}
 	return -1
 }
-

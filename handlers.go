@@ -448,8 +448,14 @@ func (s *server) Disconnect() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
-		if killchannel[txtid] != nil {
-			killchannel[txtid] <- true
+		if ch := killchannel[txtid]; ch != nil {
+			select {
+			case ch <- true:
+				// Signal sent successfully
+			default:
+				// Channel not ready, clean up anyway
+				delete(killchannel, txtid)
+			}
 		}
 
 		_, err := s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", txtid)
@@ -466,9 +472,9 @@ func (s *server) Disconnect() http.HandlerFunc {
 	}
 }
 
-// Logout logs out from MAX (clears auth token)
+// Logout logs out from MAX and deletes user
 // @Summary Logout from MAX
-// @Description Logs out from MAX and clears auth token
+// @Description Logs out from MAX and deletes the user from the system
 // @Tags Session
 // @Produce json
 // @Success 200 {object} MessageResponse
@@ -480,22 +486,16 @@ func (s *server) Logout() http.HandlerFunc {
 		token := r.Context().Value("userinfo").(Values).Get("Token")
 
 		client := clientManager.GetMaxClient(txtid)
-		if client != nil {
-			client.Logout()
+		if client != nil && client.IsConnected() {
+			client.Logout() // Sends opcode 20, server may send LoggedOut back
 		}
 
-		if killchannel[txtid] != nil {
-			killchannel[txtid] <- true
-		}
-
-		// Clear auth data
-		_, err := s.db.Exec("UPDATE users SET connected=0, auth_token='', temp_token='', max_user_id=NULL WHERE id=$1", txtid)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to clear auth data")
-		}
-
-		// Clear cache
+		// Clear cache before delete
 		userinfocache.Delete(token)
+
+		// Delete user immediately, don't wait for LoggedOut event
+		// sendWebhook=false because LoggedOut event will send it (if received)
+		s.safeDeleteUser(txtid, false)
 
 		response := map[string]interface{}{
 			"success": true,
@@ -1271,47 +1271,6 @@ func (s *server) GetContacts() http.HandlerFunc {
 	}
 }
 
-// GetAllChats returns all chats (dialogs, groups, channels)
-// @Summary Get all chats
-// @Description Returns all dialogs, groups and channels
-// @Tags User
-// @Produce json
-// @Success 200 {object} AllChatsResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /user/chats [get]
-func (s *server) GetAllChats() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		client := clientManager.GetMaxClient(txtid)
-		if client == nil || !client.IsConnected() {
-			s.Respond(w, r, http.StatusServiceUnavailable, errors.New("not connected"))
-			return
-		}
-
-		dialogs, groups, channels, err := client.GetAllChats()
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get chats: %v", err))
-			return
-		}
-
-		response := map[string]interface{}{
-			"success":  true,
-			"dialogs":  dialogs,
-			"groups":   groups,
-			"channels": channels,
-			"counts": map[string]int{
-				"dialogs":  len(dialogs),
-				"groups":   len(groups),
-				"channels": len(channels),
-			},
-		}
-
-		s.Respond(w, r, http.StatusOK, response)
-	}
-}
-
 // GetUser gets user info by ID or multiple IDs
 // @Summary Get user info
 // @Description Gets user information by MAX user ID. Supports single userId or batch request with userIds array (max 100)
@@ -1386,7 +1345,7 @@ func (s *server) GetUser() http.HandlerFunc {
 // @Failure 400 {object} ErrorResponse
 // @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
-// @Router /chat/presence [post]
+// @Router /user/presence [post]
 func (s *server) SendPresence() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2135,9 +2094,15 @@ func (s *server) DeleteUser() http.HandlerFunc {
 		vars := mux.Vars(r)
 		userID := vars["userid"]
 
-		// Disconnect if connected
-		if killchannel[userID] != nil {
-			killchannel[userID] <- true
+		// Disconnect if connected (non-blocking send)
+		if ch := killchannel[userID]; ch != nil {
+			select {
+			case ch <- true:
+				// Signal sent successfully
+			default:
+				// Channel not ready, clean up anyway
+				delete(killchannel, userID)
+			}
 		}
 
 		_, err := s.db.Exec("DELETE FROM users WHERE id=$1", userID)

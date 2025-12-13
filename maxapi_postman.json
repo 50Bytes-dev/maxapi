@@ -927,12 +927,12 @@
               "raw": "{\n  \"Phone\": \"5491155553935\",\n  \"State\": \"composing\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/chat/presence",
+              "raw": "{{baseUrl}}/user/presence",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "chat",
+                "user",
                 "presence"
               ]
             },

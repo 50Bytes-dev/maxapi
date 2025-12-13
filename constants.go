@@ -11,8 +11,11 @@ var supportedEventTypes = []string{
 	"ReadReceipt", // NOTIF_MARK (130)
 
 	// Connection
-	"Connected",    // Successful LOGIN
+	"Connected",    // Successful LOGIN (deprecated, use Sync)
 	"Disconnected", // WebSocket closed / RECONNECT (3)
+	"Reconnecting", // Attempting to reconnect
+	"Sync",         // Synchronization data on connect/reconnect
+	"LoggedOut",    // Session terminated (from MAX app or API)
 
 	// Authentication
 	"AuthCodeSent", // Auth code sent (new)

@@ -118,7 +118,6 @@ func (s *server) routes() {
 
 	// ========== USER ENDPOINTS ==========
 	s.router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
-	s.router.Handle("/user/chats", c.Then(s.GetAllChats())).Methods("GET")
 	s.router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
 	s.router.Handle("/user/info", c.Then(s.GetUser())).Methods("POST")
 	s.router.Handle("/user/presence", c.Then(s.SendPresence())).Methods("POST")

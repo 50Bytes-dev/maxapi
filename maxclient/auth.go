@@ -146,23 +146,33 @@ func (c *Client) Register(firstName string, lastName string, registerToken strin
 	return token, nil
 }
 
-// Login performs sync/login with the auth token
-func (c *Client) Login(authToken string) error {
+// Login performs sync/login with the auth token and returns raw sync data
+func (c *Client) Login(authToken string) (map[string]interface{}, error) {
 	c.AuthToken = authToken
 
 	payload := map[string]interface{}{
-		"token":       authToken,
-		"interactive": true,
+		"chatsCount":   100, // Max allowed by API (default was 40)
+		"chatsSync":    0,
+		"contactsSync": 0,
+		"draftsSync":   0,
+		"interactive":  true,
+		"presenceSync": -1,
+		"token":        authToken,
 	}
 
 	c.Logger.Info().Msg("Logging in with auth token")
 
 	resp, err := c.sendAndWait(OpLogin, payload)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Parse profile only - chats/contacts fetched on demand
+	// Log chat count
+	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
+		c.Logger.Info().Int("count", len(chatsRaw)).Msg("Got chats from login")
+	}
+
+	// Parse profile to set c.Me and c.MaxUserID
 	if profile, ok := resp.Payload["profile"].(map[string]interface{}); ok {
 		if contact, ok := profile["contact"].(map[string]interface{}); ok {
 			contactBytes, _ := json.Marshal(contact)
@@ -175,7 +185,128 @@ func (c *Client) Login(authToken string) error {
 		}
 	}
 
-	return nil
+	// Extract participant IDs from chats and fetch their full contact data
+	contactIDs := c.extractParticipantIDsFromPayload(resp.Payload)
+	if len(contactIDs) > 0 {
+		contacts, err := c.fetchContactsByIDs(contactIDs)
+		if err != nil {
+			c.Logger.Warn().Err(err).Msg("Failed to fetch contacts")
+		} else {
+			// Add fetched contacts to payload (replaces empty contacts array from login)
+			resp.Payload["contacts"] = contacts
+		}
+	}
+
+	return resp.Payload, nil
+}
+
+// Sync performs sync without re-login (for reconnects) using opcode 21
+func (c *Client) Sync() (map[string]interface{}, error) {
+	payload := map[string]interface{}{
+		"chatsCount":   100,
+		"chatsSync":    0,
+		"contactsSync": 0,
+		"draftsSync":   0,
+		"interactive":  true,
+		"presenceSync": -1,
+	}
+
+	c.Logger.Info().Msg("Syncing data (reconnect)")
+
+	resp, err := c.sendAndWait(OpSync, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	// Log chat count
+	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
+		c.Logger.Info().Int("count", len(chatsRaw)).Msg("Got chats from sync")
+	}
+
+	// Extract participant IDs from chats and fetch their full contact data
+	contactIDs := c.extractParticipantIDsFromPayload(resp.Payload)
+	if len(contactIDs) > 0 {
+		contacts, err := c.fetchContactsByIDs(contactIDs)
+		if err != nil {
+			c.Logger.Warn().Err(err).Msg("Failed to fetch contacts")
+		} else {
+			resp.Payload["contacts"] = contacts
+		}
+	}
+
+	return resp.Payload, nil
+}
+
+// extractParticipantIDsFromPayload extracts unique participant IDs from chats in payload
+func (c *Client) extractParticipantIDsFromPayload(payload map[string]interface{}) []int64 {
+	idSet := make(map[int64]bool)
+
+	chatsRaw, ok := payload["chats"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	for _, chatRaw := range chatsRaw {
+		chat, ok := chatRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if participants, ok := chat["participants"].(map[string]interface{}); ok {
+			for idStr := range participants {
+				if parsed, err := parseInt64(idStr); err == nil && parsed > 0 {
+					idSet[parsed] = true
+				}
+			}
+		}
+	}
+
+	ids := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// parseInt64 parses a string to int64
+func parseInt64(s string) (int64, error) {
+	var result int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, ErrInvalidResponse
+		}
+		result = result*10 + int64(c-'0')
+	}
+	return result, nil
+}
+
+// fetchContactsByIDs fetches contacts by their IDs using opcode 32
+func (c *Client) fetchContactsByIDs(contactIDs []int64) ([]map[string]interface{}, error) {
+	if len(contactIDs) == 0 {
+		return nil, nil
+	}
+
+	payload := map[string]interface{}{
+		"contactIds": contactIDs,
+	}
+
+	c.Logger.Info().Int("count", len(contactIDs)).Msg("Fetching contacts by IDs")
+
+	resp, err := c.sendAndWait(OpContactInfo, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var contacts []map[string]interface{}
+	if contactsRaw, ok := resp.Payload["contacts"].([]interface{}); ok {
+		for _, contactRaw := range contactsRaw {
+			if contactMap, ok := contactRaw.(map[string]interface{}); ok {
+				contacts = append(contacts, contactMap)
+			}
+		}
+	}
+
+	c.Logger.Info().Int("count", len(contacts)).Msg("Fetched contacts")
+	return contacts, nil
 }
 
 // Logout logs out from the current session
@@ -199,23 +330,47 @@ func (c *Client) Logout() error {
 }
 
 // ConnectAndLogin connects and performs login in one step
-func (c *Client) ConnectAndLogin(authToken string, userAgent *UserAgent) error {
+func (c *Client) ConnectAndLogin(authToken string, userAgent *UserAgent) (map[string]interface{}, error) {
 	if err := c.Connect(); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := c.SessionInit(userAgent); err != nil {
 		c.Close()
-		return err
+		return nil, err
 	}
 
-	if err := c.Login(authToken); err != nil {
+	syncData, err := c.Login(authToken)
+	if err != nil {
 		c.Close()
-		return err
+		return nil, err
 	}
 
 	// Start ping loop
 	c.StartPingLoop()
 
-	return nil
+	return syncData, nil
+}
+
+// ConnectAndSync connects and performs sync without re-login (for reconnects)
+func (c *Client) ConnectAndSync(userAgent *UserAgent) (map[string]interface{}, error) {
+	if err := c.Connect(); err != nil {
+		return nil, err
+	}
+
+	if err := c.SessionInit(userAgent); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	syncData, err := c.Sync()
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// Start ping loop
+	c.StartPingLoop()
+
+	return syncData, nil
 }

@@ -363,7 +363,7 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 	clientManager.SetHTTPClient(userID, httpClient)
 
 	// Connect and login
-	err = client.ConnectAndLogin(authToken, nil)
+	syncData, err := client.ConnectAndLogin(authToken, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to connect to MAX")
 		cleanupClient(userID)
@@ -376,10 +376,17 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 		log.Error().Err(err).Msg("Failed to update connected status")
 	}
 
-	// Send connected event
+	// Send Sync event with raw data from MAX server
 	postmap := map[string]interface{}{
-		"type":      "Connected",
+		"type":      "Sync",
+		"reconnect": false,
 		"maxUserID": client.MaxUserID,
+	}
+	// Merge raw sync data into postmap (preserves all fields from MAX server)
+	for key, value := range syncData {
+		if key != "type" { // Don't override type
+			postmap[key] = value
+		}
 	}
 	sendEventWithWebHook(mycli, postmap, "")
 
@@ -436,8 +443,8 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 
 				time.Sleep(reconnectDelay)
 
-				// Try to reconnect
-				err := client.ConnectAndLogin(authToken, nil)
+				// Try to reconnect using Sync (not Login) since user is already authenticated
+				syncData, err := client.ConnectAndSync(nil)
 				if err != nil {
 					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
 					continue
@@ -453,11 +460,17 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 					log.Error().Err(err).Msg("Failed to update connected status")
 				}
 
-				// Send reconnected event
+				// Send Sync event with raw data from MAX server
 				postmap := map[string]interface{}{
-					"type":      "Connected",
-					"maxUserID": client.MaxUserID,
+					"type":      "Sync",
 					"reconnect": true,
+					"maxUserID": client.MaxUserID,
+				}
+				// Merge raw sync data into postmap (preserves all fields from MAX server)
+				for key, value := range syncData {
+					if key != "type" { // Don't override type
+						postmap[key] = value
+					}
 				}
 				sendEventWithWebHook(mycli, postmap, "")
 			} else {
@@ -474,6 +487,53 @@ func cleanupClient(userID string) {
 	clientManager.DeleteMaxClient(userID)
 	clientManager.DeleteMyClient(userID)
 	clientManager.DeleteHTTPClient(userID)
+	delete(killchannel, userID)
+}
+
+// safeDeleteUser deletes a user safely, idempotent for repeated calls
+func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
+	log.Info().Str("userID", userID).Bool("sendWebhook", sendWebhook).Msg("Safe delete user")
+
+	// 1. Check if user exists in DB
+	var exists bool
+	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", userID).Scan(&exists)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to check user existence")
+	}
+	if !exists {
+		log.Info().Str("userID", userID).Msg("User already deleted from DB")
+		// Still cleanup clients just in case
+		cleanupClient(userID)
+		return
+	}
+
+	// 2. Send webhook if needed (before deleting, while mycli still exists)
+	if sendWebhook {
+		mycli := clientManager.GetMyClient(userID)
+		if mycli != nil {
+			postmap := map[string]interface{}{"type": "LoggedOut"}
+			sendEventWithWebHook(mycli, postmap, "")
+		}
+	}
+
+	// 3. Delete from DB
+	_, err = s.db.Exec("DELETE FROM users WHERE id=$1", userID)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to delete user from DB")
+	} else {
+		log.Info().Str("userID", userID).Msg("User deleted from DB")
+	}
+
+	// 4. Cleanup clients (idempotent)
+	cleanupClient(userID)
+
+	// 5. Non-blocking signal to killchannel
+	if ch := killchannel[userID]; ch != nil {
+		select {
+		case ch <- true:
+		default:
+		}
+	}
 }
 
 // handleEvent handles MAX events and sends webhooks
@@ -506,6 +566,10 @@ func (mycli *MyClient) handleEvent(event maxclient.Event) {
 	case maxclient.EventTypeDisconnected:
 		postmap["type"] = "Disconnected"
 		log.Info().Str("userID", mycli.userID).Msg("Received disconnect notification")
+	case "LoggedOut":
+		log.Info().Str("userID", mycli.userID).Msg("Received LoggedOut event from MAX")
+		mycli.s.safeDeleteUser(mycli.userID, true)
+		return // Don't continue processing
 	default:
 		log.Debug().Str("type", event.Type).Msg("Unhandled event type")
 		return
