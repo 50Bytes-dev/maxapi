@@ -19,6 +19,7 @@ var supportedEventTypes = []string{
 
 	// Authentication
 	"AuthCodeSent", // Auth code sent (new)
+	"AuthExpired",  // Auth token expired/invalid - need to re-authenticate
 
 	// Chats and groups
 	"ChatUpdate", // NOTIF_CHAT (135)

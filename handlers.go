@@ -1316,14 +1316,14 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 // @Tags Chat
 // @Accept json
 // @Produce json
-// @Param request body DownloadFileBody true "Audio info"
+// @Param request body DownloadBody true "URL"
 // @Success 200 {object} DownloadMediaResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 503 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /chat/downloadaudio [post]
 func (s *server) DownloadAudio() http.HandlerFunc {
-	return s.DownloadDocument()
+	return s.DownloadImage()
 }
 
 // ========== USER ENDPOINTS ==========

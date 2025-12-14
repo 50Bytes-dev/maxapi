@@ -366,6 +366,23 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 	syncData, err := client.ConnectAndLogin(authToken, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to connect to MAX")
+
+		// Check if auth error (token expired/invalid)
+		if maxclient.IsAuthError(err) {
+			log.Warn().Str("userID", userID).Msg("Auth token expired or invalid, clearing auth and notifying")
+			// Clear auth token in DB
+			_, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID)
+			if dbErr != nil {
+				log.Error().Err(dbErr).Msg("Failed to clear auth token")
+			}
+			// Send AuthExpired webhook
+			postmap := map[string]interface{}{
+				"type":   "AuthExpired",
+				"reason": err.Error(),
+			}
+			sendEventWithWebHook(mycli, postmap, "")
+		}
+
 		cleanupClient(userID)
 		return
 	}
@@ -464,6 +481,25 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 				syncData, err := client.ConnectAndLogin(authToken, nil)
 				if err != nil {
 					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
+
+					// Check if auth error (token expired/invalid) - stop reconnecting
+					if maxclient.IsAuthError(err) {
+						log.Warn().Str("userID", userID).Msg("Auth token expired during reconnect, stopping")
+						// Clear auth token in DB
+						_, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID)
+						if dbErr != nil {
+							log.Error().Err(dbErr).Msg("Failed to clear auth token")
+						}
+						// Send AuthExpired webhook
+						postmap := map[string]interface{}{
+							"type":   "AuthExpired",
+							"reason": err.Error(),
+						}
+						sendEventWithWebHook(mycli, postmap, "")
+						cleanupClient(userID)
+						return
+					}
+
 					continue
 				}
 
@@ -568,6 +604,22 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 				syncData, err := client.ConnectAndLogin(authToken, nil)
 				if err != nil {
 					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
+
+					// Check if auth error (token expired/invalid) - stop reconnecting
+					if maxclient.IsAuthError(err) {
+						log.Warn().Str("userID", userID).Msg("Auth token expired during reconnect (maintainConnection), stopping")
+						// Clear auth token in DB
+						s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID)
+						// Send AuthExpired webhook
+						postmap := map[string]interface{}{
+							"type":   "AuthExpired",
+							"reason": err.Error(),
+						}
+						sendEventWithWebHook(mycli, postmap, "")
+						cleanupClient(userID)
+						return
+					}
+
 					continue
 				}
 

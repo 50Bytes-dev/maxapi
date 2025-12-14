@@ -29,19 +29,27 @@ func NewError(code, message, title string) *Error {
 
 // Common errors
 var (
-	ErrNotConnected      = NewError("not_connected", "WebSocket is not connected", "Connection Error")
-	ErrTimeout           = NewError("timeout", "Request timed out", "Timeout Error")
-	ErrAuthFailed        = NewError("auth_failed", "Authentication failed", "Auth Error")
-	ErrInvalidPhone      = NewError("invalid_phone", "Invalid phone number format", "Validation Error")
-	ErrInvalidCode       = NewError("invalid_code", "Invalid verification code", "Validation Error")
+	ErrNotConnected         = NewError("not_connected", "WebSocket is not connected", "Connection Error")
+	ErrTimeout              = NewError("timeout", "Request timed out", "Timeout Error")
+	ErrAuthFailed           = NewError("auth_failed", "Authentication failed", "Auth Error")
+	ErrInvalidPhone         = NewError("invalid_phone", "Invalid phone number format", "Validation Error")
+	ErrInvalidCode          = NewError("invalid_code", "Invalid verification code", "Validation Error")
 	ErrRegistrationRequired = NewError("registration_required", "User registration is required", "Auth Error")
-	ErrUploadFailed      = NewError("upload_failed", "File upload failed", "Upload Error")
-	ErrDownloadFailed    = NewError("download_failed", "File download failed", "Download Error")
-	ErrInvalidResponse   = NewError("invalid_response", "Invalid response from server", "Response Error")
-	ErrChatNotFound      = NewError("chat_not_found", "Chat not found", "Chat Error")
-	ErrUserNotFound      = NewError("user_not_found", "User not found", "User Error")
-	ErrMessageNotFound   = NewError("message_not_found", "Message not found", "Message Error")
+	ErrUploadFailed         = NewError("upload_failed", "File upload failed", "Upload Error")
+	ErrDownloadFailed       = NewError("download_failed", "File download failed", "Download Error")
+	ErrInvalidResponse      = NewError("invalid_response", "Invalid response from server", "Response Error")
+	ErrChatNotFound         = NewError("chat_not_found", "Chat not found", "Chat Error")
+	ErrUserNotFound         = NewError("user_not_found", "User not found", "User Error")
+	ErrMessageNotFound      = NewError("message_not_found", "Message not found", "Message Error")
 )
+
+// Auth error codes that indicate token is expired/invalid
+var authErrorCodes = map[string]bool{
+	"login.token":   true, // FAIL_LOGIN_TOKEN
+	"login.expired": true, // Token expired
+	"auth.invalid":  true, // Invalid auth
+	"auth.expired":  true, // Auth expired
+}
 
 // ParseError parses an error from response payload
 func ParseError(payload map[string]interface{}) error {
@@ -67,5 +75,18 @@ func IsError(payload map[string]interface{}) bool {
 	}
 	_, ok := payload["error"].(string)
 	return ok
+}
+
+// IsAuthError checks if the error is an authentication error (token expired/invalid)
+func IsAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if e, ok := err.(*Error); ok {
+		return authErrorCodes[e.Code]
+	}
+
+	return false
 }
 

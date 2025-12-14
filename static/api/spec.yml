@@ -794,8 +794,8 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DownloadFileBody'
-        description: Audio info
+              $ref: '#/components/schemas/DownloadBody'
+        description: URL
         required: true
       responses:
         "200":
@@ -1690,8 +1690,8 @@ paths:
       - Session
   /session/sync:
     post:
-      description: Manually triggers synchronization with MAX server and returns current
-        profile, chats, contacts
+      description: Reconnects to MAX server and returns fresh profile, chats, contacts
+        data. Also sends Sync event to webhook
       responses:
         "200":
           content:
@@ -1700,15 +1700,21 @@ paths:
                 additionalProperties: {}
                 type: object
           description: OK
-        "503":
+        "400":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Not connected
+          description: No auth token
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Sync failed
       security:
       - ApiKeyAuth: []
-      summary: Trigger sync
+      summary: Request sync
       tags:
       - Session
   /user/check:
