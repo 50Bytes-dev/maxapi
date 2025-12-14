@@ -123,7 +123,7 @@ func callHook(myurl string, payload map[string]string, id string) {
 		return
 	}
 
-	format := os.Getenv("MAXAPI_WEBHOOK_FORMAT")
+	format := os.Getenv("WEBHOOK_FORMAT")
 	if format == "json" {
 		// Send as pure JSON
 		// The original payload is a map[string]string, but we want to send the postmap (map[string]interface{})
