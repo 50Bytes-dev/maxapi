@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-ENV TZ="America/Sao_Paulo"
+ENV TZ="UTC"
 WORKDIR /app
 
 COPY --from=builder /app/maxapi         /app/
