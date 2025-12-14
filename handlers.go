@@ -1466,11 +1466,19 @@ func (s *server) GetUser() http.HandlerFunc {
 		usersResponse := make([]map[string]interface{}, 0, len(users))
 		for _, user := range users {
 			usersResponse = append(usersResponse, map[string]interface{}{
-				"id":          user.ID,
-				"names":       user.Names,
-				"avatarUrl":   maxclient.GetUserAvatarURL(&user),
-				"description": user.Description,
-				"photoId":     user.PhotoID,
+				"id":            user.ID,
+				"accountStatus": user.AccountStatus,
+				"names":         user.Names,
+				"options":       user.Options,
+				"baseUrl":       user.BaseURL,
+				"baseRawUrl":    user.BaseRawURL,
+				"photoId":       user.PhotoID,
+				"description":   user.Description,
+				"gender":        user.Gender,
+				"link":          user.Link,
+				"updateTime":    user.UpdateTime,
+				"webApp":        user.WebApp,
+				"avatarUrl":     maxclient.GetUserAvatarURL(&user),
 			})
 		}
 

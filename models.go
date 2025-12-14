@@ -111,10 +111,11 @@ type CheckUserResponse struct {
 }
 
 // UserInfoResponse represents the response for getting user info
-// @Description Response with user information
+// @Description Response with user information (always returns array)
 type UserInfoResponse struct {
-	Success bool                   `json:"success" example:"true"`
-	User    map[string]interface{} `json:"user"`
+	Success bool                     `json:"success" example:"true"`
+	Users   []map[string]interface{} `json:"users"`
+	Count   int                      `json:"count" example:"1"`
 }
 
 // ContactsResponse represents the response for getting contacts

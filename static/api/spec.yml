@@ -529,14 +529,20 @@ components:
           uniqueItems: false
       type: object
     UserInfoResponse:
-      description: Response with user information
+      description: Response with user information (always returns array)
       properties:
+        count:
+          example: 1
+          type: integer
         success:
           example: true
           type: boolean
-        user:
-          additionalProperties: {}
-          type: object
+        users:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+          uniqueItems: false
       type: object
     UserResponse:
       properties:
