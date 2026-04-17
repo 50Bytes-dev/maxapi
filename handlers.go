@@ -2074,59 +2074,74 @@ func (s *server) React() http.HandlerFunc {
 
 // ========== ADMIN ENDPOINTS ==========
 
-// ListUsers returns every user, or a single user if {userid} is provided.
-// @Summary List users
-// @Description Returns all users, or a single user when {userid} is supplied.
+// userRow is the shared shape for admin user listings.
+type userRow struct {
+	ID            string `json:"id" db:"id"`
+	Name          string `json:"name" db:"name"`
+	Token         string `json:"token" db:"token"`
+	MaxUserID     *int64 `json:"maxUserId" db:"max_user_id"`
+	Webhook       string `json:"webhook" db:"webhook"`
+	Events        string `json:"events" db:"events"`
+	Connected     int    `json:"connected" db:"connected"`
+	AuthToken     string `json:"-" db:"auth_token"`
+	Authenticated bool   `json:"authenticated"`
+}
+
+const userRowQuery = "SELECT id, name, token, max_user_id, webhook, events, connected, COALESCE(auth_token, '') as auth_token FROM users"
+
+// ListUsers lists all users in the system.
+// @Summary List all users
+// @Description Returns every user registered in the system.
 // @Tags Admin
 // @Produce json
-// @Param userid path string false "User ID (optional). Without it, all users are returned."
 // @Success 200 {object} ListUsersResponse
-// @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Security AdminAuth
 // @Router /admin/users [get]
-// @Router /admin/users/{userid} [get]
 func (s *server) ListUsers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		type UserRow struct {
-			ID            string `json:"id" db:"id"`
-			Name          string `json:"name" db:"name"`
-			Token         string `json:"token" db:"token"`
-			MaxUserID     *int64 `json:"maxUserId" db:"max_user_id"`
-			Webhook       string `json:"webhook" db:"webhook"`
-			Events        string `json:"events" db:"events"`
-			Connected     int    `json:"connected" db:"connected"`
-			AuthToken     string `json:"-" db:"auth_token"`
-			Authenticated bool   `json:"authenticated"`
-		}
-
-		const baseQuery = "SELECT id, name, token, max_user_id, webhook, events, connected, COALESCE(auth_token, '') as auth_token FROM users"
-
-		if userID, ok := mux.Vars(r)["userid"]; ok && userID != "" {
-			var user UserRow
-			if err := s.db.Get(&user, baseQuery+" WHERE id=$1", userID); err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					s.Respond(w, r, http.StatusNotFound, errors.New("user not found"))
-					return
-				}
-				s.Respond(w, r, http.StatusInternalServerError, err)
-				return
-			}
-			user.Authenticated = user.AuthToken != ""
-			s.Respond(w, r, http.StatusOK, user)
-			return
-		}
-
-		var users []UserRow
-		if err := s.db.Select(&users, baseQuery+" ORDER BY id"); err != nil {
+		var users []userRow
+		if err := s.db.Select(&users, userRowQuery+" ORDER BY id"); err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
 		}
 		for i := range users {
 			users[i].Authenticated = users[i].AuthToken != ""
 		}
-
 		s.Respond(w, r, http.StatusOK, users)
+	}
+}
+
+// GetUserByID returns a single user by ID.
+// @Summary Get user by ID
+// @Description Returns a single user by their ID.
+// @Tags Admin
+// @Produce json
+// @Param userid path string true "User ID"
+// @Success 200 {object} UserResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security AdminAuth
+// @Router /admin/users/{userid} [get]
+func (s *server) GetUserByID() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := mux.Vars(r)["userid"]
+		if userID == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("userid is required"))
+			return
+		}
+
+		var user userRow
+		if err := s.db.Get(&user, userRowQuery+" WHERE id=$1", userID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				s.Respond(w, r, http.StatusNotFound, errors.New("user not found"))
+				return
+			}
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+		user.Authenticated = user.AuthToken != ""
+		s.Respond(w, r, http.StatusOK, user)
 	}
 }
 

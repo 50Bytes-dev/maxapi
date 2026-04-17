@@ -613,13 +613,7 @@ openapi: 3.1.0
 paths:
   /admin/users:
     get:
-      description: Returns all users, or a single user when {userid} is supplied.
-      parameters:
-      - description: User ID (optional). Without it, all users are returned.
-        in: path
-        name: userid
-        schema:
-          type: string
+      description: Returns every user registered in the system.
       responses:
         "200":
           content:
@@ -627,12 +621,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ListUsersResponse'
           description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Not Found
         "500":
           content:
             application/json:
@@ -641,7 +629,7 @@ paths:
           description: Internal Server Error
       security:
       - AdminAuth: []
-      summary: List users
+      summary: List all users
       tags:
       - Admin
     post:
@@ -706,11 +694,12 @@ paths:
       tags:
       - Admin
     get:
-      description: Returns all users, or a single user when {userid} is supplied.
+      description: Returns a single user by their ID.
       parameters:
-      - description: User ID (optional). Without it, all users are returned.
+      - description: User ID
         in: path
         name: userid
+        required: true
         schema:
           type: string
       responses:
@@ -718,7 +707,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ListUsersResponse'
+                $ref: '#/components/schemas/UserResponse'
           description: OK
         "404":
           content:
@@ -734,7 +723,7 @@ paths:
           description: Internal Server Error
       security:
       - AdminAuth: []
-      summary: List users
+      summary: Get user by ID
       tags:
       - Admin
     put:

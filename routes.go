@@ -47,7 +47,7 @@ func (s *server) routes() {
 	adminRoutes := s.router.PathPrefix("/admin").Subrouter()
 	adminRoutes.Use(s.authadmin)
 	adminRoutes.Handle("/users", s.ListUsers()).Methods("GET")
-	adminRoutes.Handle("/users/{userid}", s.ListUsers()).Methods("GET")
+	adminRoutes.Handle("/users/{userid}", s.GetUserByID()).Methods("GET")
 	adminRoutes.Handle("/users", s.AddUser()).Methods("POST")
 	adminRoutes.Handle("/users/{userid}", s.EditUser()).Methods("PUT")
 	adminRoutes.Handle("/users/{userid}", s.DeleteUser()).Methods("DELETE")
