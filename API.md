@@ -20,109 +20,67 @@ Header: token: <user_token>
 
 ---
 
-## Session / Auth Endpoints
-
-### Start QR Auth Session
-Open a WebSocket to MAX and request a QR auth session.
-
-```http
-POST /session/auth/qr/start
-```
-
-Response:
-```json
-{
-    "success": true,
-    "qrLink": "https://max.ru/:auth/6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7",
-    "qrCodeBase64": "data:image/png;base64,...",
-    "trackId": "6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7",
-    "pollingInterval": 5000,
-    "ttl": 120000,
-    "expiresAt": 1776435251750
-}
-```
-
-Render `qrCodeBase64` directly, or regenerate a QR image from `qrLink`. Scan it with the MAX mobile
-app (Settings → Devices → Scan QR code).
-
-### Poll QR Auth Status
-Check whether the QR has been scanned and, once it has, receive the auth token.
-
-```http
-GET /session/auth/qr/status
-```
-
-While waiting:
-```json
-{ "success": true, "status": "pending" }
-```
-
-After the user confirms on their phone — the server also persists the token:
-```json
-{
-    "success": true,
-    "status": "authorized",
-    "authToken": "permanent_auth_token"
-}
-```
-
-If the session has expired without being scanned:
-```json
-{ "success": true, "status": "expired" }
-```
-
-Clients are expected to poll on the cadence indicated by `pollingInterval` from
-`/session/auth/qr/start` (5 seconds by default).
-
-### Cancel QR Auth Session
-Close an in-progress QR session (e.g. the user navigated away from the login screen).
-
-```http
-POST /session/auth/qr/cancel
-```
-
-Response:
-```json
-{ "success": true, "message": "QR session cancelled" }
-```
+## Session Endpoints
 
 ### Connect
-Connect to MAX with saved auth token.
+Open a MAX session. Behaviour depends on whether the user already has a stored
+auth token:
+
+- **No auth token** → the proxy starts a QR auth session server-side and
+  responds with `{"success": true, "details": "Awaiting QR scan"}`. Fetch the
+  rendered code via `GET /session/qr`, scan it in the MAX mobile app, then
+  consume the `QRAuthorized` + `Sync` webhooks (the proxy reconnects
+  automatically after authorisation).
+- **Auth token present** → the proxy reconnects with the saved credentials and
+  responds with `{"success": true, "details": "Connected to MAX"}`.
+- **Already connected** → idempotent; subscriptions are still refreshed and the
+  response carries `"alreadyConnected": true`.
 
 ```http
 POST /session/connect
 Content-Type: application/json
 
 {
-    "subscribe": ["Message", "ReadReceipt", "Connected"],
-    "immediate": false  // if true, returns immediately
+    "subscribe": ["All"],
+    "immediate": true
 }
+```
+
+### Get QR Code
+Returns the QR code for an in-progress auth session. The proxy refreshes the
+code automatically when MAX's TTL elapses — poll this endpoint every few
+seconds (or subscribe to the `QRGenerated` webhook) to keep the displayed
+image current.
+
+```http
+GET /session/qr
 ```
 
 Response:
 ```json
-{ 
-    "success": true,
-    "message": "Connected to MAX"
-}
+{ "success": true, "qrcode": "data:image/png;base64,..." }
 ```
 
+Errors: `500` `"no session"` when no QR session is active, `500` `"already
+logged in"` once the user is fully authorised.
+
 ### Disconnect
-Disconnect from MAX (keeps auth token).
+Closes an active MAX connection or cancels an in-progress QR auth session.
+Keeps the stored auth token.
 
 ```http
 POST /session/disconnect
 ```
 
 ### Logout
-Logout and clear auth token.
+Logout and remove the user entirely.
 
 ```http
 POST /session/logout
 ```
 
 ### Get Status
-Get connection status.
+Connection / authentication status.
 
 ```http
 GET /session/status
@@ -621,10 +579,10 @@ Subscribe to these events via the `subscribe` array in `/session/connect`:
 | `ReadReceipt` | Messages were read |
 | `Connected` | Successfully connected |
 | `Disconnected` | Connection lost |
-| `QRGenerated` | QR auth session created |
+| `QRGenerated` | QR code available (initial or refreshed) via `GET /session/qr` |
 | `QRScanned` | User scanned QR in the mobile app |
-| `QRAuthorized` | Auth token received |
-| `QRExpired` | QR session expired before scan |
+| `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
+| `QRExpired` | QR refresh budget exhausted or session cancelled |
 | `AuthExpired` | Stored auth token is no longer valid |
 | `ChatUpdate` | Chat was updated |
 | `Typing` | User is typing |

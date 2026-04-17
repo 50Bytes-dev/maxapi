@@ -37,6 +37,11 @@ var migrations = []Migration{
 		Name:  "add_qr_auth",
 		UpSQL: addQRAuthSQL,
 	},
+	{
+		ID:    5,
+		Name:  "add_qr_session_state",
+		UpSQL: addQRSessionStateSQL,
+	},
 }
 
 // Initial schema for MaxAPI
@@ -119,6 +124,22 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'qr_track_id') THEN
         ALTER TABLE users ADD COLUMN qr_track_id TEXT DEFAULT '';
+    END IF;
+END $$;
+`
+
+const addQRSessionStateSQL = `
+-- PostgreSQL version
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'qr_code_base64') THEN
+        ALTER TABLE users ADD COLUMN qr_code_base64 TEXT DEFAULT '';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'qr_link') THEN
+        ALTER TABLE users ADD COLUMN qr_link TEXT DEFAULT '';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'qr_expires_at') THEN
+        ALTER TABLE users ADD COLUMN qr_expires_at BIGINT DEFAULT 0;
     END IF;
 END $$;
 `
@@ -336,6 +357,15 @@ func applySQLiteMigration(tx *sqlx.Tx, migration Migration) error {
 
 	case 4:
 		err = addColumnIfNotExistsSQLite(tx, "users", "qr_track_id", "TEXT DEFAULT ''")
+
+	case 5:
+		err = addColumnIfNotExistsSQLite(tx, "users", "qr_code_base64", "TEXT DEFAULT ''")
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "qr_link", "TEXT DEFAULT ''")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "qr_expires_at", "INTEGER DEFAULT 0")
+		}
 
 	case 3:
 		// Message history table for SQLite

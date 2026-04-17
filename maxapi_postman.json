@@ -111,7 +111,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Subscribe\": [\"Message\", \"ReadReceipt\"],\n  \"Immediate\": true\n}"
+              "raw": "{\n  \"Subscribe\": [\"All\"],\n  \"Immediate\": true\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/session/connect",
@@ -123,7 +123,7 @@
                 "connect"
               ]
             },
-            "description": "Connect to WhatsApp"
+            "description": "Open a MAX session. With no stored auth token the proxy starts a QR auth session server-side (fetch it via GET /session/qr); with a stored token the proxy reconnects immediately."
           },
           "response": []
         },
@@ -224,33 +224,7 @@
           "response": []
         },
         {
-          "name": "Auth QR Start",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "token",
-                "value": "{{token}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/session/auth/qr/start",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "session",
-                "auth",
-                "qr",
-                "start"
-              ]
-            },
-            "description": "Start a QR auth session. Returns qrLink, qrCodeBase64 (PNG data URL), trackId, pollingInterval, ttl."
-          },
-          "response": []
-        },
-        {
-          "name": "Auth QR Status",
+          "name": "Get QR",
           "request": {
             "method": "GET",
             "header": [
@@ -260,44 +234,16 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/session/auth/qr/status",
+              "raw": "{{baseUrl}}/session/qr",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "session",
-                "auth",
-                "qr",
-                "status"
+                "qr"
               ]
             },
-            "description": "Poll the QR auth session. Returns status: pending, scanned, authorized (with authToken), or expired."
-          },
-          "response": []
-        },
-        {
-          "name": "Auth QR Cancel",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "token",
-                "value": "{{token}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/session/auth/qr/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "session",
-                "auth",
-                "qr",
-                "cancel"
-              ]
-            },
-            "description": "Cancel an in-progress QR auth session."
+            "description": "Returns the current QR code (base64 PNG) for an in-progress auth session. Errors: 500 'no session' if no QR flow is active, 500 'already logged in' once the user is authorised."
           },
           "response": []
         },

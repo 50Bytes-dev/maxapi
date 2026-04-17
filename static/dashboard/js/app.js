@@ -605,7 +605,7 @@ function modalQRLogin(instanceToken) {
                     if (logoutWidget) logoutWidget.classList.remove('hidden');
                 } else if (qrLoginToken) {
                     // Best-effort cancel to release the temporary WebSocket.
-                    fetch(baseUrl + '/session/auth/qr/cancel', {
+                    fetch(baseUrl + '/session/disconnect', {
                         method: 'POST',
                         headers: { token: qrLoginToken },
                     }).catch(function () {});
@@ -1162,75 +1162,70 @@ async function startQRAuth() {
     }
 
     try {
-        const res = await fetch(baseUrl + '/session/auth/qr/start', {
+        // Kick off the MAX session. With no stored auth token the proxy starts
+        // a QR flow server-side; we then poll /session/qr for the rendered code.
+        const res = await fetch(baseUrl + '/session/connect', {
             method: 'POST',
-            headers: { token: token },
+            headers: { token: token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ Subscribe: ['All'], Immediate: true }),
         });
         const data = await res.json();
         if (!data.success) {
             setQRStatus('Failed: ' + (data.error || 'Unknown error'));
-            showError('Failed to start QR session: ' + (data.error || ''));
+            showError('Failed to start session: ' + (data.error || ''));
             return;
         }
-        showQRImage(data.qrCodeBase64);
+        if (data.alreadyConnected) {
+            setQRStatus('Already connected');
+            showSuccess('Session already active');
+            $('#modalLoginQR').modal('hide');
+            updateAdmin();
+            return;
+        }
         setQRStatus('Scan the code with the MAX app');
-        const interval = Math.max(1000, data.pollingInterval || 5000);
-        qrPollTimer = setTimeout(() => pollQRStatus(token, interval), interval);
+        qrPollTimer = setTimeout(() => pollQRAndStatus(token, 2000), 0);
     } catch (err) {
-        console.error('Error starting QR auth:', err);
+        console.error('Error starting session:', err);
         setQRStatus('Network error');
-        showError('Error requesting QR code');
+        showError('Error starting session');
     }
 }
 
-async function pollQRStatus(token, interval) {
+async function pollQRAndStatus(token, interval) {
     try {
-        const res = await fetch(baseUrl + '/session/auth/qr/status', {
-            method: 'GET',
-            headers: { token: token },
-        });
-        const data = await res.json();
+        const [qrRes, statusRes] = await Promise.all([
+            fetch(baseUrl + '/session/qr', {
+                method: 'GET',
+                headers: { token: token },
+            }),
+            fetch(baseUrl + '/session/status', {
+                method: 'GET',
+                headers: { token: token },
+            }),
+        ]);
 
-        if (data.status === 'authorized') {
-            setQRStatus('Authorized! Connecting…');
-            showSuccess('Authorized via QR code');
-
-            const connectRes = await fetch(baseUrl + '/session/connect', {
-                method: 'POST',
-                headers: { token: token, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    Subscribe: ['All'],
-                    Immediate: true,
-                }),
-            });
-            const connectData = await connectRes.json();
-
-            if (connectData.success) {
-                showSuccess('Connected successfully!');
-            } else {
-                showError(
-                    'Connection failed: ' +
-                        (connectData.error || 'Unknown error')
-                );
-            }
+        const statusData = await statusRes.json();
+        if (statusData && statusData.connected) {
+            setQRStatus('Connected!');
+            showSuccess('Connected successfully!');
             $('#modalLoginQR').modal('hide');
             updateAdmin();
             return;
         }
 
-        if (data.status === 'expired') {
-            setQRStatus('QR code expired. Click "Refresh QR".');
+        const qrData = await qrRes.json();
+        if (qrRes.ok && qrData.success && qrData.qrcode) {
+            showQRImage(qrData.qrcode);
+        } else if (!qrRes.ok) {
+            // 500 "no session" / "already logged in" → stop polling.
+            setQRStatus('QR session ended. Click "Refresh QR".');
             return;
         }
-
-        if (data.status === 'scanned') {
-            setQRStatus('Scanned, waiting for the server…');
-        }
     } catch (err) {
-        console.error('Error polling QR status:', err);
+        console.error('Error polling QR/status:', err);
         setQRStatus('Network error while polling');
     }
-    qrPollTimer = setTimeout(() => pollQRStatus(token, interval), interval);
+    qrPollTimer = setTimeout(() => pollQRAndStatus(token, interval), interval);
 }
 
 async function logout(token = '') {

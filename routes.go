@@ -73,13 +73,9 @@ func (s *server) routes() {
 	c = c.Append(hlog.RefererHandler("referer"))
 	c = c.Append(hlog.RequestIDHandler("req_id", "Request-Id"))
 
-	// ========== AUTH ENDPOINTS (QR) ==========
-	s.router.Handle("/session/auth/qr/start", c.Then(s.AuthQRStart())).Methods("POST")
-	s.router.Handle("/session/auth/qr/status", c.Then(s.AuthQRStatus())).Methods("GET")
-	s.router.Handle("/session/auth/qr/cancel", c.Then(s.AuthQRCancel())).Methods("POST")
-
 	// ========== SESSION ENDPOINTS ==========
 	s.router.Handle("/session/connect", c.Then(s.Connect())).Methods("POST")
+	s.router.Handle("/session/qr", c.Then(s.GetQR())).Methods("GET")
 	s.router.Handle("/session/disconnect", c.Then(s.Disconnect())).Methods("POST")
 	s.router.Handle("/session/logout", c.Then(s.Logout())).Methods("POST")
 	s.router.Handle("/session/status", c.Then(s.GetStatus())).Methods("GET")

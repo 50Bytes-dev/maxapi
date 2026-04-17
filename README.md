@@ -97,38 +97,38 @@ curl -X POST http://localhost:5555/admin/users \
 
 This returns a user token.
 
-### 2. Request QR Code
-
-```bash
-curl -X POST http://localhost:5555/session/auth/qr/start \
-  -H "token: USER_TOKEN"
-```
-
-Returns `qrLink`, `qrCodeBase64` (PNG data-URL), `trackId`, `pollingInterval` (ms), `ttl` (ms).
-Render `qrCodeBase64` in a browser or decode `qrLink` and display it; scan with the MAX mobile app
-(Settings → Devices → Scan QR code).
-
-### 3. Poll QR Status
-
-```bash
-curl -H "token: USER_TOKEN" \
-  http://localhost:5555/session/auth/qr/status
-```
-
-Returns `{"status": "pending" | "scanned" | "authorized" | "expired"}`. When `authorized`, the
-response also includes `authToken` and it is persisted server-side — no extra step needed. If
-`expired`, call `/session/auth/qr/start` again.
-
-### 4. Connect
+### 2. Open a Session
 
 ```bash
 curl -X POST http://localhost:5555/session/connect \
   -H "token: USER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"subscribe": ["Message", "ReadReceipt", "Connected"]}'
+  -d '{"subscribe": ["All"], "immediate": true}'
 ```
 
-### 5. Send a Message
+If the user has no stored auth token the proxy starts a QR auth session
+server-side; the response is `{"success": true, "details": "Awaiting QR scan"}`.
+If an auth token is already on file the user is reconnected in place and the
+response is `{"success": true, "details": "Connected to MAX"}`.
+
+### 3. Fetch the QR code
+
+```bash
+curl -H "token: USER_TOKEN" \
+  http://localhost:5555/session/qr
+```
+
+Returns `{"success": true, "qrcode": "data:image/png;base64,..."}`. Render it
+in a browser and scan with the MAX mobile app (Settings → Devices → Scan QR
+code). The server refreshes the code automatically when the MAX TTL elapses
+and fires a new `QRGenerated` webhook — poll this endpoint every few seconds
+(or react to the webhook) to keep the displayed code current.
+
+Webhook consumers can skip polling entirely: `QRGenerated` carries `qrLink` +
+`trackId`, `QRAuthorized` signals success, `Sync` fires once the full MAX
+session comes online (the proxy reconnects automatically after authorisation).
+
+### 4. Send a Message
 
 ```bash
 curl -X POST http://localhost:5555/chat/send/text \
@@ -143,14 +143,12 @@ See [API.md](API.md) for the complete API documentation.
 
 ### Available Endpoints
 
-#### Session/Auth
-- `POST /session/auth/qr/start` - Start QR auth session (returns link + base64 PNG)
-- `GET /session/auth/qr/status` - Poll QR auth status (`pending` / `scanned` / `authorized` / `expired`)
-- `POST /session/auth/qr/cancel` - Cancel in-progress QR session
-- `POST /session/connect` - Connect to MAX
-- `POST /session/disconnect` - Disconnect
-- `POST /session/logout` - Logout
-- `GET /session/status` - Get status
+#### Session
+- `POST /session/connect` - Open a session (starts QR flow if no auth token, else reconnects)
+- `GET /session/qr` - Get current QR code (base64 PNG) for an in-progress auth session
+- `POST /session/disconnect` - Disconnect / cancel in-progress QR session
+- `POST /session/logout` - Logout and remove user
+- `GET /session/status` - Connection / authentication status
 
 #### Messages
 - `POST /chat/send/text` - Send text
@@ -208,10 +206,10 @@ See [API.md](API.md) for the complete API documentation.
 | `ReadReceipt` | Messages were read |
 | `Connected` | Connected to MAX |
 | `Disconnected` | Disconnected |
-| `QRGenerated` | New QR auth session created |
+| `QRGenerated` | New (or refreshed) QR code available via `GET /session/qr` |
 | `QRScanned` | User scanned QR code in the mobile app |
-| `QRAuthorized` | Auth token received — ready for `/session/connect` |
-| `QRExpired` | QR session expired before scan |
+| `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
+| `QRExpired` | QR refresh budget exhausted or session cancelled |
 | `AuthExpired` | Stored auth token is no longer valid |
 | `ChatUpdate` | Chat was updated |
 | `Typing` | User is typing |

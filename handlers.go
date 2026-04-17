@@ -115,145 +115,168 @@ func (s *server) authalice(next http.Handler) http.Handler {
 	})
 }
 
-// ========== AUTH ENDPOINTS (QR) ==========
+// ========== QR SESSION HELPERS ==========
 
-// AuthQRStart creates a new QR auth session and returns a scannable link + PNG.
-// @Summary Start QR auth session
-// @Description Opens a WebSocket, requests a QR auth session, returns link + base64 PNG. Poll /session/auth/qr/status until scanned.
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Success 200 {object} AuthQRStartResponse
-// @Failure 500 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /session/auth/qr/start [post]
-func (s *server) AuthQRStart() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+// maxQRRefreshes caps how many times a QR session may be reissued on the same
+// auth WebSocket before we treat the session as abandoned.
+const maxQRRefreshes = 10
 
-		// Reuse an existing device ID when the user has one (stable fingerprint).
-		var deviceID string
-		_ = s.db.Get(&deviceID, "SELECT device_id FROM users WHERE id=$1", txtid)
-		if deviceID == "" {
-			deviceID = uuid.New().String()
-		}
+// renderAndStoreQR renders the QR link to a base64 PNG and writes the full
+// session state (trackId, base64, link, expiresAt) to the users row.
+func (s *server) renderAndStoreQR(userID string, result *maxclient.QRStartResult) (string, error) {
+	png, err := qrcode.Encode(result.QRLink, qrcode.Medium, 256)
+	if err != nil {
+		return "", fmt.Errorf("QR render failed: %v", err)
+	}
+	qrCodeBase64 := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 
-		// Close any previous in-progress auth client for this user before starting new one.
-		if old := clientManager.GetMaxClient(txtid); old != nil {
-			old.Close()
-			clientManager.DeleteMaxClient(txtid)
-		}
+	if _, err := s.db.Exec(
+		`UPDATE users SET qr_track_id=$1, qr_code_base64=$2, qr_link=$3, qr_expires_at=$4 WHERE id=$5`,
+		result.TrackID, qrCodeBase64, result.QRLink, result.ExpiresAt, userID,
+	); err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to persist QR state")
+		return qrCodeBase64, nil
+	}
+	return qrCodeBase64, nil
+}
 
-		logger := log.With().Str("userID", txtid).Logger()
-		client := maxclient.NewClient(deviceID, logger)
+// clearQRState wipes any stored QR artefacts for the user. Called on terminal
+// QRExpired, on a successful scan, and on disconnect.
+func (s *server) clearQRState(userID string) {
+	_, _ = s.db.Exec(
+		`UPDATE users SET qr_track_id='', qr_code_base64='', qr_link='', qr_expires_at=0 WHERE id=$1`,
+		userID,
+	)
+}
 
-		if err := client.Connect(); err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("connection failed: %v", err))
-			return
-		}
-		if err := client.SessionInit(nil); err != nil {
-			client.Close()
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("session init failed: %v", err))
-			return
-		}
+// startQRSession opens the MAX auth WebSocket, requests a QR session, persists
+// state, installs a shell MyClient (so QR-lifecycle webhooks can fire before
+// any /session/connect call) and spawns the watcher goroutine. Used by the
+// Connect handler when the user has no auth token yet.
+func (s *server) startQRSession(userID, token string) (*maxclient.QRStartResult, error) {
+	var deviceID string
+	_ = s.db.Get(&deviceID, "SELECT device_id FROM users WHERE id=$1", userID)
+	if deviceID == "" {
+		deviceID = uuid.New().String()
+	}
 
-		result, err := client.RequestQRCode()
-		if err != nil {
-			client.Close()
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("QR request failed: %v", err))
-			return
-		}
+	if old := clientManager.GetMaxClient(userID); old != nil {
+		old.Close()
+		clientManager.DeleteMaxClient(userID)
+	}
 
-		png, err := qrcode.Encode(result.QRLink, qrcode.Medium, 256)
-		if err != nil {
-			client.Close()
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("QR render failed: %v", err))
-			return
-		}
-		qrCodeBase64 := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+	logger := log.With().Str("userID", userID).Logger()
+	client := maxclient.NewClient(deviceID, logger)
 
-		if _, err := s.db.Exec(
-			"UPDATE users SET qr_track_id=$1, device_id=$2 WHERE id=$3",
-			result.TrackID, deviceID, txtid,
-		); err != nil {
-			log.Error().Err(err).Msg("Failed to store qr_track_id")
-		}
+	if err := client.Connect(); err != nil {
+		return nil, fmt.Errorf("connection failed: %v", err)
+	}
+	if err := client.SessionInit(nil); err != nil {
+		client.Close()
+		return nil, fmt.Errorf("session init failed: %v", err)
+	}
 
-		clientManager.SetMaxClient(txtid, client)
-		client.StartPingLoop()
+	result, err := client.RequestQRCode()
+	if err != nil {
+		client.Close()
+		return nil, fmt.Errorf("QR request failed: %v", err)
+	}
 
-		go s.watchQRSession(txtid, client, result)
+	if _, err := s.db.Exec("UPDATE users SET device_id=$1 WHERE id=$2", deviceID, userID); err != nil {
+		log.Error().Err(err).Msg("Failed to persist device_id")
+	}
+	if _, err := s.renderAndStoreQR(userID, result); err != nil {
+		client.Close()
+		return nil, err
+	}
 
-		if mycli := clientManager.GetMyClient(txtid); mycli != nil {
-			sendEventWithWebHook(mycli, map[string]interface{}{
-				"type":      maxclient.EventTypeQRGenerated,
-				"qrLink":    result.QRLink,
-				"trackId":   result.TrackID,
-				"expiresAt": result.ExpiresAt,
-			}, "")
-		}
+	clientManager.SetMaxClient(userID, client)
+	client.StartPingLoop()
 
-		s.Respond(w, r, http.StatusOK, map[string]interface{}{
-			"success":         true,
-			"qrLink":          result.QRLink,
-			"qrCodeBase64":    qrCodeBase64,
-			"trackId":         result.TrackID,
-			"pollingInterval": result.PollingInterval,
-			"ttl":             result.TTL,
-			"expiresAt":       result.ExpiresAt,
+	if clientManager.GetMyClient(userID) == nil {
+		clientManager.SetMyClient(userID, &MyClient{
+			userID: userID,
+			token:  token,
+			db:     s.db,
+			s:      s,
 		})
 	}
-}
 
-// AuthQRStatus returns the current state of the QR session without touching the WebSocket.
-// The server-side watcher goroutine drives the protocol and fires webhooks (QRScanned,
-// QRAuthorized, QRExpired); this endpoint exists so UIs without webhook support can poll.
-// @Summary Poll QR auth status
-// @Description Returns one of: pending, authorized (with authToken), expired. Reads DB/cache only; the server polls MAX itself and fires webhooks.
-// @Tags Auth
-// @Produce json
-// @Success 200 {object} AuthQRStatusResponse
-// @Security ApiKeyAuth
-// @Router /session/auth/qr/status [get]
-func (s *server) AuthQRStatus() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+	go s.watchQRSession(userID, client, result)
 
-		var trackID, authToken string
-		_ = s.db.Get(&trackID, "SELECT qr_track_id FROM users WHERE id=$1", txtid)
-		_ = s.db.Get(&authToken, "SELECT auth_token FROM users WHERE id=$1", txtid)
-
-		resp := map[string]interface{}{"success": true}
-		switch {
-		case trackID != "":
-			resp["status"] = string(maxclient.QRStatusPending)
-		case authToken != "":
-			resp["status"] = string(maxclient.QRStatusAuthorized)
-			resp["authToken"] = authToken
-		default:
-			resp["status"] = string(maxclient.QRStatusExpired)
-		}
-		s.Respond(w, r, http.StatusOK, resp)
+	if mycli := clientManager.GetMyClient(userID); mycli != nil {
+		sendEventWithWebHook(mycli, map[string]interface{}{
+			"type":      maxclient.EventTypeQRGenerated,
+			"qrLink":    result.QRLink,
+			"trackId":   result.TrackID,
+			"expiresAt": result.ExpiresAt,
+		}, "")
 	}
+
+	return result, nil
 }
 
-// watchQRSession polls opcode 289 in the background until the session is scanned, expires,
-// or is cancelled. Fires QRScanned / QRAuthorized / QRExpired webhooks as it transitions.
+// watchQRSession polls opcode 289 in the background until the session is
+// scanned, abandoned (too many refreshes), or replaced. Auto-refreshes the QR
+// when the current one expires on the same auth WebSocket, firing QRGenerated
+// again — mirrors whatsmeow's qrChannel reissue behaviour.
 func (s *server) watchQRSession(userID string, client *maxclient.Client, start *maxclient.QRStartResult) {
-	interval := time.Duration(start.PollingInterval) * time.Millisecond
-	if interval < time.Second {
-		interval = 5 * time.Second
-	}
-	deadline := time.Now().Add(time.Duration(start.TTL)*time.Millisecond + 15*time.Second)
+	result := start
+	refreshes := 0
 	scannedNotified := false
 
-	for time.Now().Before(deadline) {
-		time.Sleep(interval)
+	interval := func() time.Duration {
+		d := time.Duration(result.PollingInterval) * time.Millisecond
+		if d < time.Second {
+			d = 5 * time.Second
+		}
+		return d
+	}
+	deadline := time.Now().Add(time.Duration(result.TTL)*time.Millisecond + 15*time.Second)
+
+	tryRefresh := func() bool {
+		if refreshes >= maxQRRefreshes {
+			return false
+		}
+		newResult, err := client.RequestQRCode()
+		if err != nil {
+			log.Warn().Err(err).Str("userID", userID).Msg("QR refresh failed")
+			return false
+		}
+		if _, err := s.renderAndStoreQR(userID, newResult); err != nil {
+			log.Warn().Err(err).Str("userID", userID).Msg("QR refresh render failed")
+			return false
+		}
+		if mycli := clientManager.GetMyClient(userID); mycli != nil {
+			sendEventWithWebHook(mycli, map[string]interface{}{
+				"type":      maxclient.EventTypeQRGenerated,
+				"qrLink":    newResult.QRLink,
+				"trackId":   newResult.TrackID,
+				"expiresAt": newResult.ExpiresAt,
+			}, "")
+		}
+		result = newResult
+		deadline = time.Now().Add(time.Duration(result.TTL)*time.Millisecond + 15*time.Second)
+		refreshes++
+		return true
+	}
+
+	for {
+		if time.Now().After(deadline) {
+			if tryRefresh() {
+				continue
+			}
+			s.clearQRState(userID)
+			s.finishQRSession(userID, client, maxclient.EventTypeQRExpired, nil)
+			return
+		}
+
+		time.Sleep(interval())
 		if clientManager.GetMaxClient(userID) != client {
 			return // Client replaced or cancelled; stop watching.
 		}
 
-		status, err := client.PollQRStatus(start.TrackID)
+		status, err := client.PollQRStatus(result.TrackID)
 		if err != nil {
 			log.Warn().Err(err).Str("userID", userID).Msg("QR poll failed")
 			continue
@@ -263,7 +286,10 @@ func (s *server) watchQRSession(userID string, client *maxclient.Client, start *
 		case maxclient.QRStatusPending:
 			continue
 		case maxclient.QRStatusExpired:
-			_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", userID)
+			if tryRefresh() {
+				continue
+			}
+			s.clearQRState(userID)
 			s.finishQRSession(userID, client, maxclient.EventTypeQRExpired, nil)
 			return
 		case maxclient.QRStatusScanned:
@@ -271,41 +297,41 @@ func (s *server) watchQRSession(userID string, client *maxclient.Client, start *
 				if mycli := clientManager.GetMyClient(userID); mycli != nil {
 					sendEventWithWebHook(mycli, map[string]interface{}{
 						"type":    maxclient.EventTypeQRScanned,
-						"trackId": start.TrackID,
+						"trackId": result.TrackID,
 					}, "")
 				}
 				scannedNotified = true
 			}
-			authToken, err := client.ConfirmQRLogin(start.TrackID)
+			authToken, err := client.ConfirmQRLogin(result.TrackID)
 			if err != nil {
 				log.Error().Err(err).Str("userID", userID).Msg("QR confirm failed")
-				_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", userID)
+				s.clearQRState(userID)
 				s.finishQRSession(userID, client, maxclient.EventTypeQRExpired, map[string]interface{}{
 					"reason": err.Error(),
 				})
 				return
 			}
-			_, _ = s.db.Exec(
-				"UPDATE users SET auth_token=$1, qr_track_id='' WHERE id=$2",
+			if _, err := s.db.Exec(
+				`UPDATE users SET auth_token=$1, qr_track_id='', qr_code_base64='', qr_link='', qr_expires_at=0 WHERE id=$2`,
 				authToken, userID,
-			)
+			); err != nil {
+				log.Error().Err(err).Str("userID", userID).Msg("Failed to persist auth token")
+			}
 			// Refresh cached userinfo so subsequent requests see the new token.
-			if cached, ok := userinfocache.Get(s.tokenForUser(userID)); ok {
+			userToken := s.tokenForUser(userID)
+			if cached, ok := userinfocache.Get(userToken); ok {
 				if v, ok := cached.(Values); ok {
 					v.m["AuthToken"] = authToken
-					userinfocache.Set(s.tokenForUser(userID), v, cache.NoExpiration)
+					userinfocache.Set(userToken, v, cache.NoExpiration)
 				}
 			}
 			s.finishQRSession(userID, client, maxclient.EventTypeQRAuthorized, map[string]interface{}{
 				"authToken": authToken,
 			})
+			s.autoConnectAfterQR(userID, authToken)
 			return
 		}
 	}
-
-	// Deadline reached without a scan.
-	_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", userID)
-	s.finishQRSession(userID, client, maxclient.EventTypeQRExpired, nil)
 }
 
 // tokenForUser looks up the user's API token (used to invalidate cached userinfo).
@@ -315,30 +341,42 @@ func (s *server) tokenForUser(userID string) string {
 	return token
 }
 
-// AuthQRCancel tears down an in-progress QR auth session.
-// @Summary Cancel QR auth session
-// @Description Closes the temporary WebSocket used for QR auth and clears the stored trackId.
-// @Tags Auth
-// @Produce json
-// @Success 200 {object} MessageResponse
-// @Security ApiKeyAuth
-// @Router /session/auth/qr/cancel [post]
-func (s *server) AuthQRCancel() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		// Closing the client makes the watcher goroutine observe a replaced client and exit.
-		if client := clientManager.GetMaxClient(txtid); client != nil {
-			client.Close()
-			clientManager.DeleteMaxClient(txtid)
-		}
-		_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", txtid)
-
-		s.Respond(w, r, http.StatusOK, map[string]interface{}{
-			"success": true,
-			"message": "QR session cancelled",
-		})
+// autoConnectAfterQR starts a full MAX client immediately after a successful QR
+// authorisation. Event subscriptions are loaded from the user's DB row — the
+// value set via POST /admin/users or /session/connect.
+func (s *server) autoConnectAfterQR(userID, authToken string) {
+	if clientManager.IsConnected(userID) {
+		return
 	}
+
+	var row struct {
+		Token    string `db:"token"`
+		DeviceID string `db:"device_id"`
+		Events   string `db:"events"`
+	}
+	if err := s.db.Get(&row, "SELECT token, COALESCE(device_id,'') AS device_id, COALESCE(events,'') AS events FROM users WHERE id=$1", userID); err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("autoConnectAfterQR: failed to load user")
+		return
+	}
+
+	var subscribedEvents []string
+	for _, arg := range strings.Split(row.Events, ",") {
+		arg = strings.TrimSpace(arg)
+		if arg != "" && Find(supportedEventTypes, arg) && !Find(subscribedEvents, arg) {
+			subscribedEvents = append(subscribedEvents, arg)
+		}
+	}
+
+	if ch := killchannel[userID]; ch != nil {
+		select {
+		case ch <- true:
+		default:
+		}
+	}
+	killchannel[userID] = make(chan bool)
+
+	log.Info().Str("userID", userID).Msg("Auto-connecting to MAX after QR authorisation")
+	go s.startClient(userID, authToken, row.DeviceID, row.Token, subscribedEvents)
 }
 
 // finishQRSession closes the temporary auth client and fires the terminal webhook event.
@@ -359,16 +397,20 @@ func (s *server) finishQRSession(txtid string, client *maxclient.Client, eventTy
 
 // ========== SESSION ENDPOINTS ==========
 
-// Connect connects to MAX with saved auth token
-// @Summary Connect to MAX servers
-// @Description Initiates connection to MAX servers using saved auth token
+// Connect opens a MAX session. When the user has no auth token yet, a QR auth
+// session is started server-side and the caller is expected to fetch the code
+// via GET /session/qr (or consume the QRGenerated webhook). When an auth token
+// is already stored, the saved credentials are used to ConnectAndLogin
+// immediately. Calling twice while already connected is idempotent — only the
+// subscription list is refreshed.
+// @Summary Open a MAX session (QR or token-based)
+// @Description Kicks off a QR auth session when no auth token is stored, or reconnects with saved credentials. Poll GET /session/qr for the rendered QR code.
 // @Tags Session
 // @Accept json
 // @Produce json
 // @Param request body ConnectBody true "Connection options"
 // @Success 200 {object} MessageResponse
 // @Failure 400 {object} ErrorResponse
-// @Failure 409 {object} ErrorResponse "Already connected"
 // @Failure 500 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /session/connect [post]
@@ -384,21 +426,8 @@ func (s *server) Connect() http.HandlerFunc {
 			return
 		}
 
-		// Check if already connected
-		if clientManager.IsConnected(txtid) {
-			s.Respond(w, r, http.StatusConflict, errors.New("already connected"))
-			return
-		}
-
-		// Get auth token from DB
-		var authToken, deviceID string
-		err := s.db.QueryRow("SELECT auth_token, device_id FROM users WHERE id=$1", txtid).Scan(&authToken, &deviceID)
-		if err != nil || authToken == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("no auth token found, please authenticate first"))
-			return
-		}
-
-		// Process subscriptions
+		// Process subscriptions (done before the connected-check so repeat callers
+		// can update their subscription list without reconnecting).
 		var subscribedEvents []string
 		for _, arg := range t.Subscribe {
 			if Find(supportedEventTypes, arg) && !Find(subscribedEvents, arg) {
@@ -407,13 +436,46 @@ func (s *server) Connect() http.HandlerFunc {
 		}
 
 		eventstring := strings.Join(subscribedEvents, ",")
-		_, err = s.db.Exec("UPDATE users SET events=$1 WHERE id=$2", eventstring, txtid)
+		_, err := s.db.Exec("UPDATE users SET events=$1 WHERE id=$2", eventstring, txtid)
 		if err != nil {
 			log.Warn().Err(err).Msg("Could not set events in users table")
 		}
 
 		v := updateUserInfo(r.Context().Value("userinfo"), "Events", eventstring)
 		userinfocache.Set(token, v, cache.NoExpiration)
+		clientManager.UpdateMyClientSubscriptions(txtid, subscribedEvents)
+
+		if clientManager.IsConnected(txtid) {
+			s.Respond(w, r, http.StatusOK, map[string]interface{}{
+				"success":          true,
+				"details":          "Already connected to MAX",
+				"events":           eventstring,
+				"alreadyConnected": true,
+			})
+			return
+		}
+
+		var authToken, deviceID string
+		err = s.db.QueryRow("SELECT auth_token, device_id FROM users WHERE id=$1", txtid).Scan(&authToken, &deviceID)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("DB error: %v", err))
+			return
+		}
+
+		if authToken == "" {
+			// Fresh user — start a QR auth session. The first QR is persisted before
+			// we respond so that an immediate GET /session/qr returns it.
+			if _, err := s.startQRSession(txtid, token); err != nil {
+				s.Respond(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			s.Respond(w, r, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"details": "Awaiting QR scan",
+				"events":  eventstring,
+			})
+			return
+		}
 
 		log.Info().Str("userID", txtid).Msg("Connecting to MAX")
 		killchannel[txtid] = make(chan bool)
@@ -421,25 +483,60 @@ func (s *server) Connect() http.HandlerFunc {
 
 		if !t.Immediate {
 			time.Sleep(5 * time.Second)
-
 			if !clientManager.IsConnected(txtid) {
 				s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to connect"))
 				return
 			}
 		}
 
-		response := map[string]interface{}{
+		s.Respond(w, r, http.StatusOK, map[string]interface{}{
 			"success": true,
-			"message": "Connected to MAX",
-		}
-
-		s.Respond(w, r, http.StatusOK, response)
+			"details": "Connected to MAX",
+			"events":  eventstring,
+		})
 	}
 }
 
-// Disconnect disconnects from MAX
-// @Summary Disconnect from MAX servers
-// @Description Closes connection to MAX servers
+// GetQR returns the current QR code PNG (base64) for an in-progress auth
+// session. Intended for pull-based UIs; webhook consumers receive the same QR
+// via the QRGenerated event. Mirrors wuzapi's /session/qr so that a client can
+// share a single abstraction across both providers.
+// @Summary Get current QR code
+// @Description Returns the QR code stored server-side for an in-progress auth session.
+// @Tags Session
+// @Produce json
+// @Success 200 {object} QRCodeResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /session/qr [get]
+func (s *server) GetQR() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		if clientManager.GetMaxClient(txtid) == nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
+			return
+		}
+		if clientManager.IsConnected(txtid) {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("already logged in"))
+			return
+		}
+
+		var qrcodeStr string
+		_ = s.db.Get(&qrcodeStr, "SELECT COALESCE(qr_code_base64,'') FROM users WHERE id=$1", txtid)
+
+		s.Respond(w, r, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"qrcode":  qrcodeStr,
+		})
+	}
+}
+
+// Disconnect disconnects from MAX. Also cancels an in-progress QR auth
+// session if one is active — so callers have a single endpoint to tear down
+// whatever state exists server-side.
+// @Summary Disconnect from MAX / cancel QR session
+// @Description Closes connection to MAX servers or cancels an in-progress QR auth session.
 // @Tags Session
 // @Produce json
 // @Success 200 {object} MessageResponse
@@ -448,6 +545,14 @@ func (s *server) Connect() http.HandlerFunc {
 func (s *server) Disconnect() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		// Cancel any in-progress QR auth session first. The watcher observes the
+		// replaced/deleted maxClient and exits cleanly.
+		if client := clientManager.GetMaxClient(txtid); client != nil && !clientManager.IsConnected(txtid) {
+			client.Close()
+			clientManager.DeleteMaxClient(txtid)
+			s.clearQRState(txtid)
+		}
 
 		if ch := killchannel[txtid]; ch != nil {
 			select {

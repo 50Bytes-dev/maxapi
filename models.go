@@ -141,24 +141,11 @@ type ListUsersResponse struct {
 	Data    []UserResponse `json:"data"`
 }
 
-// AuthQRStartResponse is returned when a new QR auth session is created
-// @Description QR auth session created
-type AuthQRStartResponse struct {
-	Success         bool   `json:"success" example:"true"`
-	QRLink          string `json:"qrLink" example:"https://max.ru/:auth/6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7"`
-	QRCodeBase64    string `json:"qrCodeBase64" example:"data:image/png;base64,..."`
-	TrackID         string `json:"trackId" example:"6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7"`
-	PollingInterval int    `json:"pollingInterval" example:"5000"`
-	TTL             int    `json:"ttl" example:"120000"`
-	ExpiresAt       int64  `json:"expiresAt" example:"1776435251750"`
-}
-
-// AuthQRStatusResponse is returned by the QR status endpoint
-// @Description QR auth session status
-type AuthQRStatusResponse struct {
-	Success   bool   `json:"success" example:"true"`
-	Status    string `json:"status" example:"pending" enums:"pending,scanned,authorized,expired"`
-	AuthToken string `json:"authToken,omitempty" example:"auth_token_value"`
+// QRCodeResponse is returned by GET /session/qr.
+// @Description Current QR code for an in-progress auth session.
+type QRCodeResponse struct {
+	Success bool   `json:"success" example:"true"`
+	Qrcode  string `json:"qrcode" example:"data:image/png;base64,..."`
 }
 
 // ConnectBody represents the request body for connect

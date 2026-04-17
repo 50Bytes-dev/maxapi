@@ -18,10 +18,10 @@ var supportedEventTypes = []string{
 	"LoggedOut",    // Session terminated (from MAX app or API)
 
 	// Authentication
-	"QRGenerated",  // QR session created, qrLink issued
+	"QRGenerated",  // QR session created or refreshed, qrLink issued (carries refreshed code too)
 	"QRScanned",    // User scanned QR in mobile app (loginAvailable=true)
-	"QRAuthorized", // Auth token received (ready to /session/connect)
-	"QRExpired",    // QR session expired before scan
+	"QRAuthorized", // Auth token received; server auto-starts MAX session (Sync follows)
+	"QRExpired",    // Terminal — QR refresh budget exhausted or session abandoned
 	"AuthExpired",  // Auth token expired/invalid - need to re-authenticate
 
 	// Chats and groups
