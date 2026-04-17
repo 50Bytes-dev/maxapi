@@ -3,7 +3,10 @@ package maxclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -315,9 +318,12 @@ func (c *Client) receiveLoop() {
 
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+			switch {
+			case isExpectedCloseErr(err, c.ctx):
+				c.Logger.Debug().Err(err).Msg("WebSocket closed")
+			case websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway):
 				c.Logger.Info().Msg("WebSocket closed normally")
-			} else {
+			default:
 				c.Logger.Error().Err(err).Msg("WebSocket read error")
 			}
 			c.setConnected(false)
@@ -513,4 +519,26 @@ func (c *Client) cacheUser(user *User) {
 // GetDialogID calculates the dialog ID between two users
 func GetDialogID(userID1, userID2 int64) int64 {
 	return userID1 ^ userID2
+}
+
+// isExpectedCloseErr reports whether the read error is a consequence of our own
+// Close() or a graceful EOF. Such errors are noisy — we want Debug-level logging
+// rather than Error.
+func isExpectedCloseErr(err error, ctx context.Context) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	// Fast path when Close() was called: ctx is cancelled before the read unwinds.
+	if ctx != nil {
+		select {
+		case <-ctx.Done():
+			return true
+		default:
+		}
+	}
+	// Stringly-typed fallback for older wrapped errors that don't implement Is.
+	return strings.Contains(err.Error(), "use of closed network connection")
 }

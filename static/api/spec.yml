@@ -49,41 +49,45 @@ components:
     AuthQRStartResponse:
       description: QR auth session created
       properties:
-        success:
-          example: true
-          type: boolean
-        qrLink:
-          example: https://max.ru/:auth/6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7
-          type: string
-        qrCodeBase64:
-          example: data:image/png;base64,...
-          type: string
-        trackId:
-          example: 6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7
-          type: string
+        expiresAt:
+          example: 1776435251750
+          type: integer
         pollingInterval:
           example: 5000
           type: integer
+        qrCodeBase64:
+          example: data:image/png;base64,...
+          type: string
+        qrLink:
+          example: https://max.ru/:auth/6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7
+          type: string
+        success:
+          example: true
+          type: boolean
+        trackId:
+          example: 6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7
+          type: string
         ttl:
           example: 120000
-          type: integer
-        expiresAt:
-          example: 1776435251750
           type: integer
       type: object
     AuthQRStatusResponse:
       description: QR auth session status
       properties:
-        success:
-          example: true
-          type: boolean
-        status:
-          example: pending
-          enum: [pending, scanned, authorized, expired]
-          type: string
         authToken:
           example: auth_token_value
           type: string
+        status:
+          enum:
+          - pending
+          - scanned
+          - authorized
+          - expired
+          example: pending
+          type: string
+        success:
+          example: true
+          type: boolean
       type: object
     ChatHistoryBody:
       properties:
@@ -609,7 +613,13 @@ openapi: 3.1.0
 paths:
   /admin/users:
     get:
-      description: Returns a list of all users in the system
+      description: Returns all users, or a single user when {userid} is supplied.
+      parameters:
+      - description: User ID (optional). Without it, all users are returned.
+        in: path
+        name: userid
+        schema:
+          type: string
       responses:
         "200":
           content:
@@ -617,6 +627,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ListUsersResponse'
           description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
         "500":
           content:
             application/json:
@@ -625,7 +641,7 @@ paths:
           description: Internal Server Error
       security:
       - AdminAuth: []
-      summary: List all users
+      summary: List users
       tags:
       - Admin
     post:
@@ -687,6 +703,38 @@ paths:
       security:
       - AdminAuth: []
       summary: Delete user
+      tags:
+      - Admin
+    get:
+      description: Returns all users, or a single user when {userid} is supplied.
+      parameters:
+      - description: User ID (optional). Without it, all users are returned.
+        in: path
+        name: userid
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListUsersResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal Server Error
+      security:
+      - AdminAuth: []
+      summary: List users
       tags:
       - Admin
     put:
@@ -1489,9 +1537,31 @@ paths:
       summary: Update group participants
       tags:
       - Group
+  /session/auth/qr/cancel:
+    post:
+      description: Closes the temporary WebSocket used for QR auth and clears the
+        stored trackId.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+          description: OK
+      security:
+      - ApiKeyAuth: []
+      summary: Cancel QR auth session
+      tags:
+      - Auth
   /session/auth/qr/start:
     post:
-      description: Opens a WebSocket, requests a QR auth session, returns link and base64 PNG.
+      description: Opens a WebSocket, requests a QR auth session, returns link + base64
+        PNG. Poll /session/auth/qr/status until scanned.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
       responses:
         "200":
           content:
@@ -1512,7 +1582,8 @@ paths:
       - Auth
   /session/auth/qr/status:
     get:
-      description: Poll the QR auth session. When scanned, the server exchanges the session for an auth token and returns it.
+      description: 'Returns one of: pending, authorized (with authToken), expired.
+        Reads DB/cache only; the server polls MAX itself and fires webhooks.'
       responses:
         "200":
           content:
@@ -1520,30 +1591,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthQRStatusResponse'
           description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
       security:
       - ApiKeyAuth: []
       summary: Poll QR auth status
-      tags:
-      - Auth
-  /session/auth/qr/cancel:
-    post:
-      description: Close an in-progress QR auth session and clear the stored trackId.
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-      security:
-      - ApiKeyAuth: []
-      summary: Cancel QR auth session
       tags:
       - Auth
   /session/connect:

@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"maxapi/maxclient"
@@ -22,10 +21,6 @@ import (
 	"github.com/skip2/go-qrcode"
 	"github.com/vincent-petithory/dataurl"
 )
-
-// authTimeouts stores timers for auto-closing auth sessions after 5 minutes
-var authTimeouts = make(map[string]*time.Timer)
-var authTimeoutsMu sync.Mutex
 
 type Values struct {
 	m map[string]string
@@ -187,27 +182,7 @@ func (s *server) AuthQRStart() http.HandlerFunc {
 		clientManager.SetMaxClient(txtid, client)
 		client.StartPingLoop()
 
-		// Auto-close session when TTL elapses, so a stale WebSocket doesn't hang around.
-		timeout := time.Duration(result.TTL)*time.Millisecond + 15*time.Second
-		if timeout < time.Minute {
-			timeout = 2 * time.Minute
-		}
-		authTimeoutsMu.Lock()
-		if oldTimer := authTimeouts[txtid]; oldTimer != nil {
-			oldTimer.Stop()
-		}
-		authTimeouts[txtid] = time.AfterFunc(timeout, func() {
-			log.Info().Str("userID", txtid).Msg("QR auth session expired, closing client")
-			if c := clientManager.GetMaxClient(txtid); c != nil {
-				c.Close()
-				clientManager.DeleteMaxClient(txtid)
-			}
-			_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", txtid)
-			authTimeoutsMu.Lock()
-			delete(authTimeouts, txtid)
-			authTimeoutsMu.Unlock()
-		})
-		authTimeoutsMu.Unlock()
+		go s.watchQRSession(txtid, client, result)
 
 		if mycli := clientManager.GetMyClient(txtid); mycli != nil {
 			sendEventWithWebHook(mycli, map[string]interface{}{
@@ -230,93 +205,114 @@ func (s *server) AuthQRStart() http.HandlerFunc {
 	}
 }
 
-// AuthQRStatus polls the QR auth session and exchanges it for an auth token once scanned.
+// AuthQRStatus returns the current state of the QR session without touching the WebSocket.
+// The server-side watcher goroutine drives the protocol and fires webhooks (QRScanned,
+// QRAuthorized, QRExpired); this endpoint exists so UIs without webhook support can poll.
 // @Summary Poll QR auth status
-// @Description Returns one of: pending, scanned, authorized (with authToken), expired. Call on the cadence hinted at by pollingInterval.
+// @Description Returns one of: pending, authorized (with authToken), expired. Reads DB/cache only; the server polls MAX itself and fires webhooks.
 // @Tags Auth
 // @Produce json
 // @Success 200 {object} AuthQRStatusResponse
-// @Failure 400 {object} ErrorResponse
 // @Security ApiKeyAuth
 // @Router /session/auth/qr/status [get]
 func (s *server) AuthQRStatus() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
 
-		var trackID string
-		if err := s.db.Get(&trackID, "SELECT qr_track_id FROM users WHERE id=$1", txtid); err != nil || trackID == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("no active QR session, call /session/auth/qr/start first"))
-			return
+		var trackID, authToken string
+		_ = s.db.Get(&trackID, "SELECT qr_track_id FROM users WHERE id=$1", txtid)
+		_ = s.db.Get(&authToken, "SELECT auth_token FROM users WHERE id=$1", txtid)
+
+		resp := map[string]interface{}{"success": true}
+		switch {
+		case trackID != "":
+			resp["status"] = string(maxclient.QRStatusPending)
+		case authToken != "":
+			resp["status"] = string(maxclient.QRStatusAuthorized)
+			resp["authToken"] = authToken
+		default:
+			resp["status"] = string(maxclient.QRStatusExpired)
 		}
-
-		client := clientManager.GetMaxClient(txtid)
-		if client == nil {
-			_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", txtid)
-			s.Respond(w, r, http.StatusOK, map[string]interface{}{
-				"success": true,
-				"status":  string(maxclient.QRStatusExpired),
-			})
-			return
-		}
-
-		status, err := client.PollQRStatus(trackID)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("poll failed: %v", err))
-			return
-		}
-
-		if status == maxclient.QRStatusExpired {
-			s.finishQRSession(txtid, client, maxclient.EventTypeQRExpired, nil)
-			s.Respond(w, r, http.StatusOK, map[string]interface{}{
-				"success": true,
-				"status":  string(maxclient.QRStatusExpired),
-			})
-			return
-		}
-
-		if status == maxclient.QRStatusPending {
-			s.Respond(w, r, http.StatusOK, map[string]interface{}{
-				"success": true,
-				"status":  string(maxclient.QRStatusPending),
-			})
-			return
-		}
-
-		// Scanned — exchange for auth token right away. One less round-trip for the caller.
-		if mycli := clientManager.GetMyClient(txtid); mycli != nil {
-			sendEventWithWebHook(mycli, map[string]interface{}{
-				"type":    maxclient.EventTypeQRScanned,
-				"trackId": trackID,
-			}, "")
-		}
-
-		authToken, err := client.ConfirmQRLogin(trackID)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("QR confirm failed: %v", err))
-			return
-		}
-
-		if _, err := s.db.Exec(
-			"UPDATE users SET auth_token=$1, qr_track_id='' WHERE id=$2",
-			authToken, txtid,
-		); err != nil {
-			log.Error().Err(err).Msg("Failed to save auth token")
-		}
-
-		v := updateUserInfo(r.Context().Value("userinfo"), "AuthToken", authToken)
-		userinfocache.Set(token, v, cache.NoExpiration)
-
-		s.finishQRSession(txtid, client, maxclient.EventTypeQRAuthorized, map[string]interface{}{
-			"authToken": authToken,
-		})
-
-		s.Respond(w, r, http.StatusOK, map[string]interface{}{
-			"success":   true,
-			"status":    string(maxclient.QRStatusAuthorized),
-			"authToken": authToken,
-		})
+		s.Respond(w, r, http.StatusOK, resp)
 	}
+}
+
+// watchQRSession polls opcode 289 in the background until the session is scanned, expires,
+// or is cancelled. Fires QRScanned / QRAuthorized / QRExpired webhooks as it transitions.
+func (s *server) watchQRSession(userID string, client *maxclient.Client, start *maxclient.QRStartResult) {
+	interval := time.Duration(start.PollingInterval) * time.Millisecond
+	if interval < time.Second {
+		interval = 5 * time.Second
+	}
+	deadline := time.Now().Add(time.Duration(start.TTL)*time.Millisecond + 15*time.Second)
+	scannedNotified := false
+
+	for time.Now().Before(deadline) {
+		time.Sleep(interval)
+		if clientManager.GetMaxClient(userID) != client {
+			return // Client replaced or cancelled; stop watching.
+		}
+
+		status, err := client.PollQRStatus(start.TrackID)
+		if err != nil {
+			log.Warn().Err(err).Str("userID", userID).Msg("QR poll failed")
+			continue
+		}
+
+		switch status {
+		case maxclient.QRStatusPending:
+			continue
+		case maxclient.QRStatusExpired:
+			_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", userID)
+			s.finishQRSession(userID, client, maxclient.EventTypeQRExpired, nil)
+			return
+		case maxclient.QRStatusScanned:
+			if !scannedNotified {
+				if mycli := clientManager.GetMyClient(userID); mycli != nil {
+					sendEventWithWebHook(mycli, map[string]interface{}{
+						"type":    maxclient.EventTypeQRScanned,
+						"trackId": start.TrackID,
+					}, "")
+				}
+				scannedNotified = true
+			}
+			authToken, err := client.ConfirmQRLogin(start.TrackID)
+			if err != nil {
+				log.Error().Err(err).Str("userID", userID).Msg("QR confirm failed")
+				_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", userID)
+				s.finishQRSession(userID, client, maxclient.EventTypeQRExpired, map[string]interface{}{
+					"reason": err.Error(),
+				})
+				return
+			}
+			_, _ = s.db.Exec(
+				"UPDATE users SET auth_token=$1, qr_track_id='' WHERE id=$2",
+				authToken, userID,
+			)
+			// Refresh cached userinfo so subsequent requests see the new token.
+			if cached, ok := userinfocache.Get(s.tokenForUser(userID)); ok {
+				if v, ok := cached.(Values); ok {
+					v.m["AuthToken"] = authToken
+					userinfocache.Set(s.tokenForUser(userID), v, cache.NoExpiration)
+				}
+			}
+			s.finishQRSession(userID, client, maxclient.EventTypeQRAuthorized, map[string]interface{}{
+				"authToken": authToken,
+			})
+			return
+		}
+	}
+
+	// Deadline reached without a scan.
+	_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", userID)
+	s.finishQRSession(userID, client, maxclient.EventTypeQRExpired, nil)
+}
+
+// tokenForUser looks up the user's API token (used to invalidate cached userinfo).
+func (s *server) tokenForUser(userID string) string {
+	var token string
+	_ = s.db.Get(&token, "SELECT token FROM users WHERE id=$1", userID)
+	return token
 }
 
 // AuthQRCancel tears down an in-progress QR auth session.
@@ -331,16 +327,11 @@ func (s *server) AuthQRCancel() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
+		// Closing the client makes the watcher goroutine observe a replaced client and exit.
 		if client := clientManager.GetMaxClient(txtid); client != nil {
 			client.Close()
 			clientManager.DeleteMaxClient(txtid)
 		}
-		authTimeoutsMu.Lock()
-		if timer := authTimeouts[txtid]; timer != nil {
-			timer.Stop()
-			delete(authTimeouts, txtid)
-		}
-		authTimeoutsMu.Unlock()
 		_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", txtid)
 
 		s.Respond(w, r, http.StatusOK, map[string]interface{}{
@@ -356,12 +347,6 @@ func (s *server) finishQRSession(txtid string, client *maxclient.Client, eventTy
 		client.Close()
 	}
 	clientManager.DeleteMaxClient(txtid)
-	authTimeoutsMu.Lock()
-	if timer := authTimeouts[txtid]; timer != nil {
-		timer.Stop()
-		delete(authTimeouts, txtid)
-	}
-	authTimeoutsMu.Unlock()
 
 	if mycli := clientManager.GetMyClient(txtid); mycli != nil {
 		payload := map[string]interface{}{"type": eventType}
@@ -2089,15 +2074,18 @@ func (s *server) React() http.HandlerFunc {
 
 // ========== ADMIN ENDPOINTS ==========
 
-// ListUsers lists all users
-// @Summary List all users
-// @Description Returns a list of all users in the system
+// ListUsers returns every user, or a single user if {userid} is provided.
+// @Summary List users
+// @Description Returns all users, or a single user when {userid} is supplied.
 // @Tags Admin
 // @Produce json
+// @Param userid path string false "User ID (optional). Without it, all users are returned."
 // @Success 200 {object} ListUsersResponse
+// @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Security AdminAuth
 // @Router /admin/users [get]
+// @Router /admin/users/{userid} [get]
 func (s *server) ListUsers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type UserRow struct {
@@ -2112,14 +2100,28 @@ func (s *server) ListUsers() http.HandlerFunc {
 			Authenticated bool   `json:"authenticated"`
 		}
 
-		var users []UserRow
-		err := s.db.Select(&users, "SELECT id, name, token, max_user_id, webhook, events, connected, COALESCE(auth_token, '') as auth_token FROM users ORDER BY id")
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
+		const baseQuery = "SELECT id, name, token, max_user_id, webhook, events, connected, COALESCE(auth_token, '') as auth_token FROM users"
+
+		if userID, ok := mux.Vars(r)["userid"]; ok && userID != "" {
+			var user UserRow
+			if err := s.db.Get(&user, baseQuery+" WHERE id=$1", userID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					s.Respond(w, r, http.StatusNotFound, errors.New("user not found"))
+					return
+				}
+				s.Respond(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			user.Authenticated = user.AuthToken != ""
+			s.Respond(w, r, http.StatusOK, user)
 			return
 		}
 
-		// Set authenticated based on auth_token
+		var users []UserRow
+		if err := s.db.Select(&users, baseQuery+" ORDER BY id"); err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
 		for i := range users {
 			users[i].Authenticated = users[i].AuthToken != ""
 		}
