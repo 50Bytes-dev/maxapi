@@ -185,7 +185,8 @@ func (s *server) startQRSession(userID, token string) (*maxclient.QRStartResult,
 	if _, err := s.db.Exec("UPDATE users SET device_id=$1 WHERE id=$2", deviceID, userID); err != nil {
 		log.Error().Err(err).Msg("Failed to persist device_id")
 	}
-	if _, err := s.renderAndStoreQR(userID, result); err != nil {
+	qrCodeBase64, err := s.renderAndStoreQR(userID, result)
+	if err != nil {
 		client.Close()
 		return nil, err
 	}
@@ -206,10 +207,11 @@ func (s *server) startQRSession(userID, token string) (*maxclient.QRStartResult,
 
 	if mycli := clientManager.GetMyClient(userID); mycli != nil {
 		sendEventWithWebHook(mycli, map[string]interface{}{
-			"type":      maxclient.EventTypeQRGenerated,
-			"qrLink":    result.QRLink,
-			"trackId":   result.TrackID,
-			"expiresAt": result.ExpiresAt,
+			"type":         maxclient.EventTypeQRGenerated,
+			"qrLink":       result.QRLink,
+			"qrCodeBase64": qrCodeBase64,
+			"trackId":      result.TrackID,
+			"expiresAt":    result.ExpiresAt,
 		}, "")
 	}
 
@@ -243,16 +245,18 @@ func (s *server) watchQRSession(userID string, client *maxclient.Client, start *
 			log.Warn().Err(err).Str("userID", userID).Msg("QR refresh failed")
 			return false
 		}
-		if _, err := s.renderAndStoreQR(userID, newResult); err != nil {
+		qrCodeBase64, err := s.renderAndStoreQR(userID, newResult)
+		if err != nil {
 			log.Warn().Err(err).Str("userID", userID).Msg("QR refresh render failed")
 			return false
 		}
 		if mycli := clientManager.GetMyClient(userID); mycli != nil {
 			sendEventWithWebHook(mycli, map[string]interface{}{
-				"type":      maxclient.EventTypeQRGenerated,
-				"qrLink":    newResult.QRLink,
-				"trackId":   newResult.TrackID,
-				"expiresAt": newResult.ExpiresAt,
+				"type":         maxclient.EventTypeQRGenerated,
+				"qrLink":       newResult.QRLink,
+				"qrCodeBase64": qrCodeBase64,
+				"trackId":      newResult.TrackID,
+				"expiresAt":    newResult.ExpiresAt,
 			}, "")
 		}
 		result = newResult

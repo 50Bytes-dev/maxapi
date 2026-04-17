@@ -579,7 +579,7 @@ Subscribe to these events via the `subscribe` array in `/session/connect`:
 | `ReadReceipt` | Messages were read |
 | `Connected` | Successfully connected |
 | `Disconnected` | Connection lost |
-| `QRGenerated` | QR code available (initial or refreshed) via `GET /session/qr` |
+| `QRGenerated` | QR code available (initial or refreshed). Payload: `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt`. `GET /session/qr` returns the same PNG for pull consumers. |
 | `QRScanned` | User scanned QR in the mobile app |
 | `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
 | `QRExpired` | QR refresh budget exhausted or session cancelled |

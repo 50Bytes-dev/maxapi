@@ -206,7 +206,7 @@ See [API.md](API.md) for the complete API documentation.
 | `ReadReceipt` | Messages were read |
 | `Connected` | Connected to MAX |
 | `Disconnected` | Disconnected |
-| `QRGenerated` | New (or refreshed) QR code available via `GET /session/qr` |
+| `QRGenerated` | New (or refreshed) QR code — payload carries `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt` |
 | `QRScanned` | User scanned QR code in the mobile app |
 | `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
 | `QRExpired` | QR refresh budget exhausted or session cancelled |
