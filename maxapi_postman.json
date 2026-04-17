@@ -224,7 +224,33 @@
           "response": []
         },
         {
-          "name": "Get QR Code",
+          "name": "Auth QR Start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/session/auth/qr/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "session",
+                "auth",
+                "qr",
+                "start"
+              ]
+            },
+            "description": "Start a QR auth session. Returns qrLink, qrCodeBase64 (PNG data URL), trackId, pollingInterval, ttl."
+          },
+          "response": []
+        },
+        {
+          "name": "Auth QR Status",
           "request": {
             "method": "GET",
             "header": [
@@ -234,48 +260,44 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/session/qr",
+              "raw": "{{baseUrl}}/session/auth/qr/status",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "session",
-                "qr"
+                "auth",
+                "qr",
+                "status"
               ]
             },
-            "description": "Get QR code"
+            "description": "Poll the QR auth session. Returns status: pending, scanned, authorized (with authToken), or expired."
           },
           "response": []
         },
         {
-          "name": "Pair Phone",
+          "name": "Auth QR Cancel",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "token",
                 "value": "{{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"Phone\": \"5591155553934\"\n}"
-            },
             "url": {
-              "raw": "{{baseUrl}}/session/pairphone",
+              "raw": "{{baseUrl}}/session/auth/qr/cancel",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "session",
-                "pairphone"
+                "auth",
+                "qr",
+                "cancel"
               ]
             },
-            "description": "Pair by phone"
+            "description": "Cancel an in-progress QR auth session."
           },
           "response": []
         },

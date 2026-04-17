@@ -3,6 +3,7 @@ files/
 maxapi
 .env
 .tool-versions
+.memsearch/
 
 # Added by Claude Task Master
 # Logs

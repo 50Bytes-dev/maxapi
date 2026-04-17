@@ -12,14 +12,14 @@ const (
 	OpSessionInit Opcode = 6
 
 	// Auth Operations
-	OpProfile     Opcode = 16
-	OpAuthRequest Opcode = 17
-	OpAuth        Opcode = 18
-	OpLogin       Opcode = 19
-	OpLogout      Opcode = 20
-	OpSync        Opcode = 21
-	OpConfig      Opcode = 22
-	OpAuthConfirm Opcode = 23
+	OpProfile       Opcode = 16
+	OpLogin         Opcode = 19
+	OpLogout        Opcode = 20
+	OpSync          Opcode = 21
+	OpConfig        Opcode = 22
+	OpAuthQRStart   Opcode = 288
+	OpAuthQRStatus  Opcode = 289
+	OpAuthQRConfirm Opcode = 291
 
 	// Contact Operations
 	OpContactInfo        Opcode = 32
@@ -96,15 +96,6 @@ const (
 	OpFoldersReorder Opcode = 275
 	OpFoldersDelete  Opcode = 276
 	OpNotifFolders   Opcode = 277
-)
-
-// AuthType represents authentication type
-type AuthType string
-
-const (
-	AuthTypeStartAuth AuthType = "START_AUTH"
-	AuthTypeCheckCode AuthType = "CHECK_CODE"
-	AuthTypeRegister  AuthType = "REGISTER"
 )
 
 // ChatType represents chat types

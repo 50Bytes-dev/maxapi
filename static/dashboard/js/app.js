@@ -170,48 +170,11 @@ document.addEventListener('DOMContentLoaded', function () {
         return false;
     });
 
-    // SMS Login event handlers
-    const requestCodeBtn = document.getElementById('requestCodeBtn');
-    if (requestCodeBtn) {
-        requestCodeBtn.addEventListener('click', function () {
-            const phone = document.getElementById('smsPhoneInput').value.trim();
-            if (phone) {
-                requestSMSCode(phone);
-            }
-        });
-    }
-
-    const confirmCodeBtn = document.getElementById('confirmCodeBtn');
-    if (confirmCodeBtn) {
-        confirmCodeBtn.addEventListener('click', function () {
-            const code = document.getElementById('smsCodeInput').value.trim();
-            if (code) {
-                confirmSMSCode(code);
-            }
-        });
-    }
-
-    const backToPhoneBtn = document.getElementById('backToPhoneBtn');
-    if (backToPhoneBtn) {
-        backToPhoneBtn.addEventListener('click', function () {
-            document.getElementById('phoneStep').classList.remove('hidden');
-            document.getElementById('codeStep').classList.add('hidden');
-            document.getElementById('registerStep').classList.add('hidden');
-        });
-    }
-
-    const registerBtn = document.getElementById('registerBtn');
-    if (registerBtn) {
-        registerBtn.addEventListener('click', function () {
-            const firstName = document
-                .getElementById('regFirstName')
-                .value.trim();
-            const lastName = document
-                .getElementById('regLastName')
-                .value.trim();
-            if (firstName) {
-                completeRegistration(firstName, lastName);
-            }
+    // QR Login event handlers
+    const qrRefreshBtn = document.getElementById('qrRefreshBtn');
+    if (qrRefreshBtn) {
+        qrRefreshBtn.addEventListener('click', function () {
+            startQRAuth();
         });
     }
 
@@ -626,22 +589,26 @@ function webhookModal() {
     });
 }
 
-var smsLoginToken = null;
+var qrLoginToken = null;
 
-function modalSMSLogin(instanceToken) {
-    smsLoginToken = instanceToken || getLocalStorageItem('token');
-    $('#modalLoginSMS')
+function modalQRLogin(instanceToken) {
+    qrLoginToken = instanceToken || getLocalStorageItem('token');
+    $('#modalLoginQR')
         .modal({
             onVisible: function () {
-                document.getElementById('phoneStep').classList.remove('hidden');
-                document.getElementById('codeStep').classList.add('hidden');
-                document.getElementById('registerStep').classList.add('hidden');
+                startQRAuth();
             },
             onHidden: function () {
+                stopQRPolling();
                 if (scanned == true) {
-                    document
-                        .getElementById('logoutWidget')
-                        .classList.remove('hidden');
+                    const logoutWidget = document.getElementById('logoutWidget');
+                    if (logoutWidget) logoutWidget.classList.remove('hidden');
+                } else if (qrLoginToken) {
+                    // Best-effort cancel to release the temporary WebSocket.
+                    fetch(baseUrl + '/session/auth/qr/cancel', {
+                        method: 'POST',
+                        headers: { token: qrLoginToken },
+                    }).catch(function () {});
                 }
             },
         })
@@ -1004,21 +971,8 @@ async function connect(token = '') {
     const statusData = await statusRes.json();
 
     if (!statusData?.data?.authenticated) {
-        // Not authenticated - show SMS modal
-        smsLoginToken = token;
-        $('#modalLoginSMS')
-            .modal({
-                onVisible: function () {
-                    document
-                        .getElementById('phoneStep')
-                        .classList.remove('hidden');
-                    document.getElementById('codeStep').classList.add('hidden');
-                    document
-                        .getElementById('registerStep')
-                        .classList.add('hidden');
-                },
-            })
-            .modal('show');
+        // Not authenticated yet — start QR login flow.
+        modalQRLogin(token);
         return { success: false, error: 'Authentication required' };
     }
 
@@ -1160,126 +1114,94 @@ async function userInfo(phone) {
     return data;
 }
 
-// SMS Authentication Functions
-let tempToken = '';
+// QR Authentication Functions
 
-async function requestSMSCode(phone) {
-    console.log('Requesting SMS code for:', phone);
-    const token = smsLoginToken || getLocalStorageItem('token');
-    const myHeaders = new Headers();
-    myHeaders.append('token', token);
-    myHeaders.append('Content-Type', 'application/json');
+let qrPollTimer = null;
 
-    try {
-        const res = await fetch(baseUrl + '/session/auth/request', {
-            method: 'POST',
-            headers: myHeaders,
-            body: JSON.stringify({ phone: phone }),
-        });
-        const data = await res.json();
-
-        if (data.success) {
-            tempToken = data.tempToken || '';
-            document.getElementById('smsInfo').innerHTML = 'SMS code sent!';
-            document.getElementById('smsHelp').innerHTML =
-                '<li>Check your phone for the verification code</li><li>Enter the code below</li>';
-            document.getElementById('phoneStep').classList.add('hidden');
-            document.getElementById('codeStep').classList.remove('hidden');
-            showSuccess('SMS code sent successfully!');
-        } else {
-            showError('Failed to send SMS: ' + (data.error || 'Unknown error'));
-        }
-    } catch (error) {
-        console.error('Error requesting SMS code:', error);
-        showError('Error requesting SMS code');
+function stopQRPolling() {
+    if (qrPollTimer) {
+        clearTimeout(qrPollTimer);
+        qrPollTimer = null;
     }
 }
 
-async function confirmSMSCode(code) {
-    console.log('Confirming SMS code:', code);
-    const token = smsLoginToken || getLocalStorageItem('token');
-    const myHeaders = new Headers();
-    myHeaders.append('token', token);
-    myHeaders.append('Content-Type', 'application/json');
+function setQRStatus(text) {
+    const el = document.getElementById('qrStatusMessage');
+    if (el) el.textContent = text;
+}
 
-    try {
-        const res = await fetch(baseUrl + '/session/auth/confirm', {
-            method: 'POST',
-            headers: myHeaders,
-            body: JSON.stringify({ code: code }),
-        });
-        const data = await res.json();
+function showQRLoader() {
+    const img = document.getElementById('qrImage');
+    const loader = document.getElementById('qrLoader');
+    if (img) {
+        img.removeAttribute('src');
+        img.style.display = 'none';
+    }
+    if (loader) loader.style.display = '';
+}
 
-        if (data.success) {
-            if (data.requiresRegistration) {
-                // New user - show registration form
-                document.getElementById('codeStep').classList.add('hidden');
-                document
-                    .getElementById('registerStep')
-                    .classList.remove('hidden');
-                showSuccess('Please complete registration');
-            } else {
-                // Existing user - authenticated, now connect automatically
-                $('#modalLoginSMS').modal('hide');
-                showSuccess('Authenticated! Connecting...');
-
-                // Auto-connect after authentication
-                const connectRes = await fetch(baseUrl + '/session/connect', {
-                    method: 'POST',
-                    headers: myHeaders,
-                    body: JSON.stringify({
-                        Subscribe: ['All'],
-                        Immediate: true,
-                    }),
-                });
-                const connectData = await connectRes.json();
-
-                if (connectData.success) {
-                    showSuccess('Connected successfully!');
-                } else {
-                    showError(
-                        'Connection failed: ' +
-                            (connectData.error || 'Unknown error')
-                    );
-                }
-                updateAdmin();
-            }
-        } else {
-            showError('Invalid code: ' + (data.error || 'Unknown error'));
-        }
-    } catch (error) {
-        console.error('Error confirming code:', error);
-        showError('Error confirming code');
+function showQRImage(src) {
+    const img = document.getElementById('qrImage');
+    const loader = document.getElementById('qrLoader');
+    if (loader) loader.style.display = 'none';
+    if (img) {
+        img.src = src;
+        img.style.display = '';
     }
 }
 
-async function completeRegistration(firstName, lastName) {
-    console.log('Completing registration:', firstName, lastName);
-    const token = smsLoginToken || getLocalStorageItem('token');
-    const myHeaders = new Headers();
-    myHeaders.append('token', token);
-    myHeaders.append('Content-Type', 'application/json');
+async function startQRAuth() {
+    stopQRPolling();
+    showQRLoader();
+    setQRStatus('Requesting QR code…');
+
+    const token = qrLoginToken || getLocalStorageItem('token');
+    if (!token) {
+        setQRStatus('Missing access token');
+        return;
+    }
 
     try {
-        const res = await fetch(baseUrl + '/session/auth/register', {
+        const res = await fetch(baseUrl + '/session/auth/qr/start', {
             method: 'POST',
-            headers: myHeaders,
-            body: JSON.stringify({
-                firstName: firstName,
-                lastName: lastName,
-            }),
+            headers: { token: token },
+        });
+        const data = await res.json();
+        if (!data.success) {
+            setQRStatus('Failed: ' + (data.error || 'Unknown error'));
+            showError('Failed to start QR session: ' + (data.error || ''));
+            return;
+        }
+        showQRImage(data.qrCodeBase64);
+        setQRStatus('Scan the code with the MAX app');
+        const interval = Math.max(1000, data.pollingInterval || 5000);
+        qrPollTimer = setTimeout(() => pollQRStatus(token, interval), interval);
+    } catch (err) {
+        console.error('Error starting QR auth:', err);
+        setQRStatus('Network error');
+        showError('Error requesting QR code');
+    }
+}
+
+async function pollQRStatus(token, interval) {
+    try {
+        const res = await fetch(baseUrl + '/session/auth/qr/status', {
+            method: 'GET',
+            headers: { token: token },
         });
         const data = await res.json();
 
-        if (data.success) {
-            $('#modalLoginSMS').modal('hide');
-            showSuccess('Registration completed! Connecting...');
+        if (data.status === 'authorized') {
+            setQRStatus('Authorized! Connecting…');
+            showSuccess('Authorized via QR code');
 
-            // Auto-connect after registration
             const connectRes = await fetch(baseUrl + '/session/connect', {
                 method: 'POST',
-                headers: myHeaders,
-                body: JSON.stringify({ Subscribe: ['All'], Immediate: true }),
+                headers: { token: token, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    Subscribe: ['All'],
+                    Immediate: true,
+                }),
             });
             const connectData = await connectRes.json();
 
@@ -1291,16 +1213,24 @@ async function completeRegistration(firstName, lastName) {
                         (connectData.error || 'Unknown error')
                 );
             }
+            $('#modalLoginQR').modal('hide');
             updateAdmin();
-        } else {
-            showError(
-                'Registration failed: ' + (data.error || 'Unknown error')
-            );
+            return;
         }
-    } catch (error) {
-        console.error('Error completing registration:', error);
-        showError('Error completing registration');
+
+        if (data.status === 'expired') {
+            setQRStatus('QR code expired. Click "Refresh QR".');
+            return;
+        }
+
+        if (data.status === 'scanned') {
+            setQRStatus('Scanned, waiting for the server…');
+        }
+    } catch (err) {
+        console.error('Error polling QR status:', err);
+        setQRStatus('Network error while polling');
     }
+    qrPollTimer = setTimeout(() => pollQRStatus(token, interval), interval);
 }
 
 async function logout(token = '') {
@@ -1318,8 +1248,6 @@ async function logout(token = '') {
     data = await res.json();
     return data;
 }
-
-// getQr function removed - MAX uses SMS authentication instead of QR codes
 
 async function statusRequest() {
     const myHeaders = new Headers();

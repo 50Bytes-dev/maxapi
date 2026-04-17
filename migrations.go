@@ -32,6 +32,11 @@ var migrations = []Migration{
 		Name:  "add_message_history",
 		UpSQL: addMessageHistorySQL,
 	},
+	{
+		ID:    4,
+		Name:  "add_qr_auth",
+		UpSQL: addQRAuthSQL,
+	},
 }
 
 // Initial schema for MaxAPI
@@ -48,7 +53,7 @@ BEGIN
             max_user_id BIGINT,
             auth_token TEXT DEFAULT '',
             device_id TEXT DEFAULT '',
-            temp_token TEXT DEFAULT '',
+            qr_track_id TEXT DEFAULT '',
             connected INTEGER DEFAULT 0,
             expiration INTEGER,
             events TEXT NOT NULL DEFAULT '',
@@ -104,6 +109,16 @@ BEGIN
     
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 's3_retention_days') THEN
         ALTER TABLE users ADD COLUMN s3_retention_days INTEGER DEFAULT 30;
+    END IF;
+END $$;
+`
+
+const addQRAuthSQL = `
+-- PostgreSQL version
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'qr_track_id') THEN
+        ALTER TABLE users ADD COLUMN qr_track_id TEXT DEFAULT '';
     END IF;
 END $$;
 `
@@ -274,7 +289,7 @@ func applySQLiteMigration(tx *sqlx.Tx, migration Migration) error {
 				max_user_id INTEGER,
 				auth_token TEXT DEFAULT '',
 				device_id TEXT DEFAULT '',
-				temp_token TEXT DEFAULT '',
+				qr_track_id TEXT DEFAULT '',
 				connected INTEGER DEFAULT 0,
                     expiration INTEGER,
                     events TEXT NOT NULL DEFAULT '',
@@ -318,6 +333,9 @@ func applySQLiteMigration(tx *sqlx.Tx, migration Migration) error {
 			if err == nil {
 				err = addColumnIfNotExistsSQLite(tx, "users", "s3_retention_days", "INTEGER DEFAULT 30")
 			}
+
+	case 4:
+		err = addColumnIfNotExistsSQLite(tx, "users", "qr_track_id", "TEXT DEFAULT ''")
 
 	case 3:
 		// Message history table for SQLite

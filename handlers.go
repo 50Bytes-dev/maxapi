@@ -19,6 +19,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog/log"
+	"github.com/skip2/go-qrcode"
 	"github.com/vincent-petithory/dataurl"
 )
 
@@ -119,41 +120,35 @@ func (s *server) authalice(next http.Handler) http.Handler {
 	})
 }
 
-// ========== AUTH ENDPOINTS ==========
+// ========== AUTH ENDPOINTS (QR) ==========
 
-// AuthRequest handles SMS code request
-// @Summary Request SMS verification code
-// @Description Sends an SMS verification code to the specified phone number
+// AuthQRStart creates a new QR auth session and returns a scannable link + PNG.
+// @Summary Start QR auth session
+// @Description Opens a WebSocket, requests a QR auth session, returns link + base64 PNG. Poll /session/auth/qr/status until scanned.
 // @Tags Auth
 // @Accept json
 // @Produce json
-// @Param request body AuthRequestBody true "Phone number and language"
-// @Success 200 {object} AuthRequestResponse
-// @Failure 400 {object} ErrorResponse
+// @Success 200 {object} AuthQRStartResponse
 // @Failure 500 {object} ErrorResponse
 // @Security ApiKeyAuth
-// @Router /session/auth/request [post]
-func (s *server) AuthRequest() http.HandlerFunc {
+// @Router /session/auth/qr/start [post]
+func (s *server) AuthQRStart() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
 
-		decoder := json.NewDecoder(r.Body)
-		var body AuthRequestBody
-		if err := decoder.Decode(&body); err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
+		// Reuse an existing device ID when the user has one (stable fingerprint).
+		var deviceID string
+		_ = s.db.Get(&deviceID, "SELECT device_id FROM users WHERE id=$1", txtid)
+		if deviceID == "" {
+			deviceID = uuid.New().String()
 		}
 
-		if body.Phone == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("phone number is required"))
-			return
+		// Close any previous in-progress auth client for this user before starting new one.
+		if old := clientManager.GetMaxClient(txtid); old != nil {
+			old.Close()
+			clientManager.DeleteMaxClient(txtid)
 		}
 
-		// Create device ID if not exists
-		deviceID := uuid.New().String()
-
-		// Create temporary MAX client for auth
 		logger := log.With().Str("userID", txtid).Logger()
 		client := maxclient.NewClient(deviceID, logger)
 
@@ -161,239 +156,219 @@ func (s *server) AuthRequest() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("connection failed: %v", err))
 			return
 		}
-
 		if err := client.SessionInit(nil); err != nil {
 			client.Close()
 			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("session init failed: %v", err))
 			return
 		}
 
-		tempToken, err := client.RequestAuthCode(body.Phone, body.Language)
+		result, err := client.RequestQRCode()
 		if err != nil {
 			client.Close()
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("auth request failed: %v", err))
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("QR request failed: %v", err))
 			return
 		}
 
-		// Store temp token and device ID
-		_, err = s.db.Exec("UPDATE users SET temp_token=$1, device_id=$2 WHERE id=$3", tempToken, deviceID, txtid)
+		png, err := qrcode.Encode(result.QRLink, qrcode.Medium, 256)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to store temp token")
+			client.Close()
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("QR render failed: %v", err))
+			return
+		}
+		qrCodeBase64 := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+
+		if _, err := s.db.Exec(
+			"UPDATE users SET qr_track_id=$1, device_id=$2 WHERE id=$3",
+			result.TrackID, deviceID, txtid,
+		); err != nil {
+			log.Error().Err(err).Msg("Failed to store qr_track_id")
 		}
 
-		// Store client temporarily for auth flow
 		clientManager.SetMaxClient(txtid, client)
-
-		// Start ping loop to keep connection alive during auth flow
 		client.StartPingLoop()
 
-		// Set 5-minute timeout to auto-close auth session
+		// Auto-close session when TTL elapses, so a stale WebSocket doesn't hang around.
+		timeout := time.Duration(result.TTL)*time.Millisecond + 15*time.Second
+		if timeout < time.Minute {
+			timeout = 2 * time.Minute
+		}
 		authTimeoutsMu.Lock()
 		if oldTimer := authTimeouts[txtid]; oldTimer != nil {
 			oldTimer.Stop()
 		}
-		authTimeouts[txtid] = time.AfterFunc(5*time.Minute, func() {
-			log.Info().Str("userID", txtid).Msg("Auth session timed out after 5 minutes")
+		authTimeouts[txtid] = time.AfterFunc(timeout, func() {
+			log.Info().Str("userID", txtid).Msg("QR auth session expired, closing client")
 			if c := clientManager.GetMaxClient(txtid); c != nil {
 				c.Close()
 				clientManager.DeleteMaxClient(txtid)
 			}
+			_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", txtid)
 			authTimeoutsMu.Lock()
 			delete(authTimeouts, txtid)
 			authTimeoutsMu.Unlock()
 		})
 		authTimeoutsMu.Unlock()
 
-		// Send webhook event
 		if mycli := clientManager.GetMyClient(txtid); mycli != nil {
-			postmap := map[string]interface{}{
-				"type":  "AuthCodeSent",
-				"phone": body.Phone,
-			}
-			sendEventWithWebHook(mycli, postmap, "")
+			sendEventWithWebHook(mycli, map[string]interface{}{
+				"type":      maxclient.EventTypeQRGenerated,
+				"qrLink":    result.QRLink,
+				"trackId":   result.TrackID,
+				"expiresAt": result.ExpiresAt,
+			}, "")
 		}
 
-		response := map[string]interface{}{
-			"success":   true,
-			"message":   "Verification code sent",
-			"tempToken": tempToken,
-		}
-
-		// Update cache
-		v := updateUserInfo(r.Context().Value("userinfo"), "TempToken", tempToken)
-		userinfocache.Set(token, v, cache.NoExpiration)
-
-		s.Respond(w, r, http.StatusOK, response)
+		s.Respond(w, r, http.StatusOK, map[string]interface{}{
+			"success":         true,
+			"qrLink":          result.QRLink,
+			"qrCodeBase64":    qrCodeBase64,
+			"trackId":         result.TrackID,
+			"pollingInterval": result.PollingInterval,
+			"ttl":             result.TTL,
+			"expiresAt":       result.ExpiresAt,
+		})
 	}
 }
 
-// AuthConfirm handles SMS code verification
-// @Summary Confirm SMS verification code
-// @Description Verifies the SMS code and returns auth token
+// AuthQRStatus polls the QR auth session and exchanges it for an auth token once scanned.
+// @Summary Poll QR auth status
+// @Description Returns one of: pending, scanned, authorized (with authToken), expired. Call on the cadence hinted at by pollingInterval.
 // @Tags Auth
-// @Accept json
 // @Produce json
-// @Param request body AuthConfirmBody true "SMS code"
-// @Success 200 {object} AuthConfirmResponse
+// @Success 200 {object} AuthQRStatusResponse
 // @Failure 400 {object} ErrorResponse
 // @Security ApiKeyAuth
-// @Router /session/auth/confirm [post]
-func (s *server) AuthConfirm() http.HandlerFunc {
+// @Router /session/auth/qr/status [get]
+func (s *server) AuthQRStatus() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		token := r.Context().Value("userinfo").(Values).Get("Token")
 
-		// Cancel auth timeout
-		authTimeoutsMu.Lock()
-		if timer := authTimeouts[txtid]; timer != nil {
-			timer.Stop()
-			delete(authTimeouts, txtid)
-		}
-		authTimeoutsMu.Unlock()
-
-		decoder := json.NewDecoder(r.Body)
-		var body AuthConfirmBody
-		if err := decoder.Decode(&body); err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
-		}
-
-		if body.Code == "" || len(body.Code) != 6 {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("valid 6-digit code is required"))
-			return
-		}
-
-		// Get temp token from DB
-		var tempToken string
-		if err := s.db.Get(&tempToken, "SELECT temp_token FROM users WHERE id=$1", txtid); err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("no pending auth request"))
+		var trackID string
+		if err := s.db.Get(&trackID, "SELECT qr_track_id FROM users WHERE id=$1", txtid); err != nil || trackID == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("no active QR session, call /session/auth/qr/start first"))
 			return
 		}
 
 		client := clientManager.GetMaxClient(txtid)
 		if client == nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("no active auth session"))
+			_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", txtid)
+			s.Respond(w, r, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"status":  string(maxclient.QRStatusExpired),
+			})
 			return
 		}
 
-		authToken, registerToken, err := client.SubmitAuthCode(body.Code, tempToken)
+		status, err := client.PollQRStatus(trackID)
 		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, fmt.Errorf("code verification failed: %v", err))
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("poll failed: %v", err))
 			return
 		}
 
-		response := map[string]interface{}{
-			"success": true,
-		}
-
-		if authToken != "" {
-			// Existing user - save auth token
-			_, err = s.db.Exec("UPDATE users SET auth_token=$1, temp_token='' WHERE id=$2", authToken, txtid)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to save auth token")
-			}
-
-			// Close the temporary auth client so /session/connect can create a proper one
-			client.Close()
-			clientManager.DeleteMaxClient(txtid)
-
-			response["message"] = "Login successful"
-			response["authToken"] = authToken
-			response["requiresRegistration"] = false
-
-			v := updateUserInfo(r.Context().Value("userinfo"), "AuthToken", authToken)
-			userinfocache.Set(token, v, cache.NoExpiration)
-		} else if registerToken != "" {
-			// New user - needs registration (keep client open for registration)
-			_, err = s.db.Exec("UPDATE users SET temp_token=$1 WHERE id=$2", registerToken, txtid)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to save register token")
-			}
-
-			response["message"] = "Registration required"
-			response["registerToken"] = registerToken
-			response["requiresRegistration"] = true
-		}
-
-		s.Respond(w, r, http.StatusOK, response)
-	}
-}
-
-// AuthRegister handles new user registration
-// @Summary Register new user
-// @Description Registers a new user with first and last name
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param request body AuthRegisterBody true "User registration data"
-// @Success 200 {object} AuthRegisterResponse
-// @Failure 400 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /session/auth/register [post]
-func (s *server) AuthRegister() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
-
-		// Cancel auth timeout
-		authTimeoutsMu.Lock()
-		if timer := authTimeouts[txtid]; timer != nil {
-			timer.Stop()
-			delete(authTimeouts, txtid)
-		}
-		authTimeoutsMu.Unlock()
-
-		decoder := json.NewDecoder(r.Body)
-		var body AuthRegisterBody
-		if err := decoder.Decode(&body); err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
+		if status == maxclient.QRStatusExpired {
+			s.finishQRSession(txtid, client, maxclient.EventTypeQRExpired, nil)
+			s.Respond(w, r, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"status":  string(maxclient.QRStatusExpired),
+			})
 			return
 		}
 
-		if body.FirstName == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("firstName is required"))
+		if status == maxclient.QRStatusPending {
+			s.Respond(w, r, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"status":  string(maxclient.QRStatusPending),
+			})
 			return
 		}
 
-		// Get register token from DB
-		var registerToken string
-		if err := s.db.Get(&registerToken, "SELECT temp_token FROM users WHERE id=$1", txtid); err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("no pending registration"))
-			return
+		// Scanned — exchange for auth token right away. One less round-trip for the caller.
+		if mycli := clientManager.GetMyClient(txtid); mycli != nil {
+			sendEventWithWebHook(mycli, map[string]interface{}{
+				"type":    maxclient.EventTypeQRScanned,
+				"trackId": trackID,
+			}, "")
 		}
 
-		client := clientManager.GetMaxClient(txtid)
-		if client == nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("no active auth session"))
-			return
-		}
-
-		authToken, err := client.Register(body.FirstName, body.LastName, registerToken)
+		authToken, err := client.ConfirmQRLogin(trackID)
 		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, fmt.Errorf("registration failed: %v", err))
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("QR confirm failed: %v", err))
 			return
 		}
 
-		// Save auth token
-		_, err = s.db.Exec("UPDATE users SET auth_token=$1, temp_token='' WHERE id=$2", authToken, txtid)
-		if err != nil {
+		if _, err := s.db.Exec(
+			"UPDATE users SET auth_token=$1, qr_track_id='' WHERE id=$2",
+			authToken, txtid,
+		); err != nil {
 			log.Error().Err(err).Msg("Failed to save auth token")
 		}
-
-		// Close the temporary auth client so /session/connect can create a proper one
-		client.Close()
-		clientManager.DeleteMaxClient(txtid)
 
 		v := updateUserInfo(r.Context().Value("userinfo"), "AuthToken", authToken)
 		userinfocache.Set(token, v, cache.NoExpiration)
 
-		response := map[string]interface{}{
-			"success":   true,
-			"message":   "Registration successful",
+		s.finishQRSession(txtid, client, maxclient.EventTypeQRAuthorized, map[string]interface{}{
 			"authToken": authToken,
-		}
+		})
 
-		s.Respond(w, r, http.StatusOK, response)
+		s.Respond(w, r, http.StatusOK, map[string]interface{}{
+			"success":   true,
+			"status":    string(maxclient.QRStatusAuthorized),
+			"authToken": authToken,
+		})
+	}
+}
+
+// AuthQRCancel tears down an in-progress QR auth session.
+// @Summary Cancel QR auth session
+// @Description Closes the temporary WebSocket used for QR auth and clears the stored trackId.
+// @Tags Auth
+// @Produce json
+// @Success 200 {object} MessageResponse
+// @Security ApiKeyAuth
+// @Router /session/auth/qr/cancel [post]
+func (s *server) AuthQRCancel() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		if client := clientManager.GetMaxClient(txtid); client != nil {
+			client.Close()
+			clientManager.DeleteMaxClient(txtid)
+		}
+		authTimeoutsMu.Lock()
+		if timer := authTimeouts[txtid]; timer != nil {
+			timer.Stop()
+			delete(authTimeouts, txtid)
+		}
+		authTimeoutsMu.Unlock()
+		_, _ = s.db.Exec("UPDATE users SET qr_track_id='' WHERE id=$1", txtid)
+
+		s.Respond(w, r, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"message": "QR session cancelled",
+		})
+	}
+}
+
+// finishQRSession closes the temporary auth client and fires the terminal webhook event.
+func (s *server) finishQRSession(txtid string, client *maxclient.Client, eventType string, extra map[string]interface{}) {
+	if client != nil {
+		client.Close()
+	}
+	clientManager.DeleteMaxClient(txtid)
+	authTimeoutsMu.Lock()
+	if timer := authTimeouts[txtid]; timer != nil {
+		timer.Stop()
+		delete(authTimeouts, txtid)
+	}
+	authTimeoutsMu.Unlock()
+
+	if mycli := clientManager.GetMyClient(txtid); mycli != nil {
+		payload := map[string]interface{}{"type": eventType}
+		for k, v := range extra {
+			payload[k] = v
+		}
+		sendEventWithWebHook(mycli, payload, "")
 	}
 }
 

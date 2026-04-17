@@ -22,80 +22,68 @@ Header: token: <user_token>
 
 ## Session / Auth Endpoints
 
-### Request Auth Code
-Request SMS verification code for authentication.
+### Start QR Auth Session
+Open a WebSocket to MAX and request a QR auth session.
 
 ```http
-POST /session/auth/request
-Content-Type: application/json
-
-{
-    "phone": "+79001234567",
-    "language": "ru"  // optional, default: "ru"
-}
+POST /session/auth/qr/start
 ```
 
 Response:
 ```json
 {
     "success": true,
-    "message": "Verification code sent",
-    "tempToken": "temporary_token_for_code_verification"
+    "qrLink": "https://max.ru/:auth/6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7",
+    "qrCodeBase64": "data:image/png;base64,...",
+    "trackId": "6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7",
+    "pollingInterval": 5000,
+    "ttl": 120000,
+    "expiresAt": 1776435251750
 }
 ```
 
-### Confirm Auth Code
-Submit the received SMS code.
+Render `qrCodeBase64` directly, or regenerate a QR image from `qrLink`. Scan it with the MAX mobile
+app (Settings → Devices → Scan QR code).
+
+### Poll QR Auth Status
+Check whether the QR has been scanned and, once it has, receive the auth token.
 
 ```http
-POST /session/auth/confirm
-Content-Type: application/json
-
-{
-    "code": "123456"
-}
+GET /session/auth/qr/status
 ```
 
-Response (existing user):
+While waiting:
+```json
+{ "success": true, "status": "pending" }
+```
+
+After the user confirms on their phone — the server also persists the token:
 ```json
 {
     "success": true,
-    "message": "Login successful",
-    "authToken": "permanent_auth_token",
-    "requiresRegistration": false
-}
-```
-
-Response (new user):
-```json
-{
-    "success": true,
-    "message": "Registration required",
-    "registerToken": "registration_token",
-    "requiresRegistration": true
-}
-```
-
-### Register New User
-Complete registration for new users.
-
-```http
-POST /session/auth/register
-Content-Type: application/json
-
-{
-    "firstName": "John",
-    "lastName": "Doe"  // optional
-}
-```
-
-Response:
-```json
-{
-    "success": true,
-    "message": "Registration successful",
+    "status": "authorized",
     "authToken": "permanent_auth_token"
 }
+```
+
+If the session has expired without being scanned:
+```json
+{ "success": true, "status": "expired" }
+```
+
+Clients are expected to poll on the cadence indicated by `pollingInterval` from
+`/session/auth/qr/start` (5 seconds by default).
+
+### Cancel QR Auth Session
+Close an in-progress QR session (e.g. the user navigated away from the login screen).
+
+```http
+POST /session/auth/qr/cancel
+```
+
+Response:
+```json
+{ "success": true, "message": "QR session cancelled" }
 ```
 
 ### Connect
@@ -633,7 +621,11 @@ Subscribe to these events via the `subscribe` array in `/session/connect`:
 | `ReadReceipt` | Messages were read |
 | `Connected` | Successfully connected |
 | `Disconnected` | Connection lost |
-| `AuthCodeSent` | Auth code was sent |
+| `QRGenerated` | QR auth session created |
+| `QRScanned` | User scanned QR in the mobile app |
+| `QRAuthorized` | Auth token received |
+| `QRExpired` | QR session expired before scan |
+| `AuthExpired` | Stored auth token is no longer valid |
 | `ChatUpdate` | Chat was updated |
 | `Typing` | User is typing |
 | `ReactionChange` | Reaction was changed |

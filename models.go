@@ -18,34 +18,6 @@ type MessageResponse struct {
 	Message string `json:"message" example:"Operation completed"`
 }
 
-// ========== AUTH RESPONSES ==========
-
-// AuthRequestResponse represents the response for auth code request
-// @Description Response after requesting SMS verification code
-type AuthRequestResponse struct {
-	Success   bool   `json:"success" example:"true"`
-	Message   string `json:"message" example:"Verification code sent"`
-	TempToken string `json:"tempToken" example:"temp_token_value"`
-}
-
-// AuthConfirmResponse represents the response for auth code confirmation
-// @Description Response after confirming SMS verification code
-type AuthConfirmResponse struct {
-	Success              bool   `json:"success" example:"true"`
-	Message              string `json:"message" example:"Login successful"`
-	AuthToken            string `json:"authToken,omitempty" example:"auth_token_value"`
-	RegisterToken        string `json:"registerToken,omitempty" example:"register_token_value"`
-	RequiresRegistration bool   `json:"requiresRegistration" example:"false"`
-}
-
-// AuthRegisterResponse represents the response for user registration
-// @Description Response after successful registration
-type AuthRegisterResponse struct {
-	Success   bool   `json:"success" example:"true"`
-	Message   string `json:"message" example:"Registration successful"`
-	AuthToken string `json:"authToken" example:"auth_token_value"`
-}
-
 // ========== SESSION RESPONSES ==========
 
 // StatusResponse represents the connection status response
@@ -169,21 +141,24 @@ type ListUsersResponse struct {
 	Data    []UserResponse `json:"data"`
 }
 
-// AuthRequestBody represents the request body for SMS code request
-type AuthRequestBody struct {
-	Phone    string `json:"phone" example:"79001234567"`
-	Language string `json:"language" example:"ru"`
+// AuthQRStartResponse is returned when a new QR auth session is created
+// @Description QR auth session created
+type AuthQRStartResponse struct {
+	Success         bool   `json:"success" example:"true"`
+	QRLink          string `json:"qrLink" example:"https://max.ru/:auth/6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7"`
+	QRCodeBase64    string `json:"qrCodeBase64" example:"data:image/png;base64,..."`
+	TrackID         string `json:"trackId" example:"6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7"`
+	PollingInterval int    `json:"pollingInterval" example:"5000"`
+	TTL             int    `json:"ttl" example:"120000"`
+	ExpiresAt       int64  `json:"expiresAt" example:"1776435251750"`
 }
 
-// AuthConfirmBody represents the request body for SMS code confirmation
-type AuthConfirmBody struct {
-	Code string `json:"code" example:"123456"`
-}
-
-// AuthRegisterBody represents the request body for user registration
-type AuthRegisterBody struct {
-	FirstName string `json:"firstName" example:"John"`
-	LastName  string `json:"lastName" example:"Doe"`
+// AuthQRStatusResponse is returned by the QR status endpoint
+// @Description QR auth session status
+type AuthQRStatusResponse struct {
+	Success   bool   `json:"success" example:"true"`
+	Status    string `json:"status" example:"pending" enums:"pending,scanned,authorized,expired"`
+	AuthToken string `json:"authToken,omitempty" example:"auth_token_value"`
 }
 
 // ConnectBody represents the request body for connect

@@ -334,18 +334,3 @@ type SyncResponse struct {
 	Contacts []Contact         `json:"contacts,omitempty"`
 }
 
-// AuthResponse represents authentication response
-type AuthResponse struct {
-	Token      string `json:"token,omitempty"`
-	TokenAttrs struct {
-		Login    *TokenInfo `json:"LOGIN,omitempty"`
-		Register *TokenInfo `json:"REGISTER,omitempty"`
-	} `json:"tokenAttrs,omitempty"`
-	Error   string `json:"error,omitempty"`
-	Message string `json:"message,omitempty"`
-}
-
-// TokenInfo represents token information
-type TokenInfo struct {
-	Token string `json:"token"`
-}

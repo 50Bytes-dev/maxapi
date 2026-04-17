@@ -2,7 +2,15 @@ package maxclient
 
 import (
 	"encoding/json"
+	"regexp"
 )
+
+var phoneRegex = regexp.MustCompile(`^\+?\d{10,15}$`)
+
+// ValidatePhone validates a phone number format
+func ValidatePhone(phone string) bool {
+	return phoneRegex.MatchString(phone)
+}
 
 // GetUsers gets information about users by IDs
 func (c *Client) GetUsers(userIDs []int64) ([]User, error) {

@@ -2,15 +2,7 @@ package maxclient
 
 import (
 	"encoding/json"
-	"regexp"
 )
-
-var phoneRegex = regexp.MustCompile(`^\+?\d{10,15}$`)
-
-// ValidatePhone validates a phone number format
-func ValidatePhone(phone string) bool {
-	return phoneRegex.MatchString(phone)
-}
 
 // SessionInit initializes a session with the MAX server
 func (c *Client) SessionInit(userAgent *UserAgent) error {
@@ -18,7 +10,7 @@ func (c *Client) SessionInit(userAgent *UserAgent) error {
 		userAgent = &UserAgent{
 			DeviceType: DeviceTypeWeb,
 			Locale:     "ru",
-			AppVersion: "25.10.13",
+			AppVersion: "26.4.3",
 		}
 	}
 
@@ -33,116 +25,129 @@ func (c *Client) SessionInit(userAgent *UserAgent) error {
 	}
 
 	c.Logger.Info().Msg("Session initialized")
-	_ = resp // Session init response contains config data
+	_ = resp
 	return nil
 }
 
-// RequestAuthCode requests an SMS verification code
-func (c *Client) RequestAuthCode(phone string, language string) (string, error) {
-	if !ValidatePhone(phone) {
-		return "", ErrInvalidPhone
+// QRStartResult is the result of OpAuthQRStart.
+type QRStartResult struct {
+	QRLink          string `json:"qrLink"`
+	TrackID         string `json:"trackId"`
+	PollingInterval int    `json:"pollingInterval"`
+	TTL             int    `json:"ttl"`
+	ExpiresAt       int64  `json:"expiresAt"`
+}
+
+// QRStatus is the polling status for a QR auth session.
+type QRStatus string
+
+const (
+	QRStatusPending    QRStatus = "pending"
+	QRStatusScanned    QRStatus = "scanned"
+	QRStatusAuthorized QRStatus = "authorized"
+	QRStatusExpired    QRStatus = "expired"
+)
+
+// RequestQRCode requests a new QR auth session.
+func (c *Client) RequestQRCode() (*QRStartResult, error) {
+	c.Logger.Info().Msg("Requesting QR auth session")
+
+	resp, err := c.sendAndWait(OpAuthQRStart, map[string]interface{}{})
+	if err != nil {
+		return nil, err
 	}
 
-	if language == "" {
-		language = "ru"
+	payloadBytes, err := json.Marshal(resp.Payload)
+	if err != nil {
+		return nil, err
 	}
 
-	payload := map[string]interface{}{
-		"phone":    phone,
-		"type":     string(AuthTypeStartAuth),
-		"language": language,
+	var result QRStartResult
+	if err := json.Unmarshal(payloadBytes, &result); err != nil {
+		return nil, err
 	}
 
-	c.Logger.Info().Str("phone", phone).Msg("Requesting auth code")
+	if result.TrackID == "" {
+		return nil, NewError("no_track_id", "No trackId in response", "Auth Error")
+	}
 
-	resp, err := c.sendAndWait(OpAuthRequest, payload)
+	c.Logger.Info().Str("trackId", result.TrackID).Int("ttl", result.TTL).Msg("QR session created")
+	return &result, nil
+}
+
+// PollQRStatus polls the status of an ongoing QR auth session.
+// Returns QRStatusScanned when the user has confirmed in the mobile app.
+// Returns QRStatusExpired when the session is no longer valid.
+func (c *Client) PollQRStatus(trackID string) (QRStatus, error) {
+	if trackID == "" {
+		return "", NewError("invalid_track_id", "trackId is required", "Validation Error")
+	}
+
+	resp, err := c.sendAndWait(OpAuthQRStatus, map[string]interface{}{
+		"trackId": trackID,
+	})
+	if err != nil {
+		if e, ok := err.(*Error); ok && e.Code == "track.not.found" {
+			return QRStatusExpired, nil
+		}
+		return "", err
+	}
+
+	status, ok := resp.Payload["status"].(map[string]interface{})
+	if !ok {
+		return QRStatusPending, nil
+	}
+
+	if loginAvailable, _ := status["loginAvailable"].(bool); loginAvailable {
+		return QRStatusScanned, nil
+	}
+
+	return QRStatusPending, nil
+}
+
+// ConfirmQRLogin exchanges a scanned QR session for an auth token.
+// Call only after PollQRStatus returns QRStatusScanned.
+func (c *Client) ConfirmQRLogin(trackID string) (string, error) {
+	if trackID == "" {
+		return "", NewError("invalid_track_id", "trackId is required", "Validation Error")
+	}
+
+	c.Logger.Info().Str("trackId", trackID).Msg("Confirming QR login")
+
+	resp, err := c.sendAndWait(OpAuthQRConfirm, map[string]interface{}{
+		"trackId": trackID,
+	})
 	if err != nil {
 		return "", err
 	}
 
-	token, ok := resp.Payload["token"].(string)
-	if !ok {
-		return "", NewError("no_token", "No token in response", "Auth Error")
-	}
-
-	c.Logger.Info().Msg("Auth code requested successfully")
-	return token, nil
-}
-
-// SubmitAuthCode submits the verification code and returns the result
-// Returns: authToken (if login successful), registerToken (if registration needed), error
-func (c *Client) SubmitAuthCode(code string, tempToken string) (authToken string, registerToken string, err error) {
-	if len(code) != 6 {
-		return "", "", ErrInvalidCode
-	}
-
-	payload := map[string]interface{}{
-		"token":         tempToken,
-		"verifyCode":    code,
-		"authTokenType": string(AuthTypeCheckCode),
-	}
-
-	c.Logger.Info().Msg("Submitting verification code")
-
-	resp, err := c.sendAndWait(OpAuth, payload)
-	if err != nil {
-		return "", "", err
-	}
-
-	// Parse tokenAttrs
 	tokenAttrs, ok := resp.Payload["tokenAttrs"].(map[string]interface{})
 	if !ok {
-		return "", "", NewError("invalid_response", "No tokenAttrs in response", "Auth Error")
+		return "", NewError("invalid_response", "No tokenAttrs in response", "Auth Error")
 	}
 
-	// Check for LOGIN token (existing user)
-	if loginAttrs, ok := tokenAttrs["LOGIN"].(map[string]interface{}); ok {
-		if token, ok := loginAttrs["token"].(string); ok {
-			c.Logger.Info().Msg("Login successful - existing user")
-			return token, "", nil
-		}
-	}
-
-	// Check for REGISTER token (new user)
-	if registerAttrs, ok := tokenAttrs["REGISTER"].(map[string]interface{}); ok {
-		if token, ok := registerAttrs["token"].(string); ok {
-			c.Logger.Info().Msg("Registration required - new user")
-			return "", token, nil
-		}
-	}
-
-	return "", "", NewError("no_token", "No valid token in response", "Auth Error")
-}
-
-// Register completes registration for a new user
-func (c *Client) Register(firstName string, lastName string, registerToken string) (string, error) {
-	if firstName == "" {
-		return "", NewError("invalid_name", "First name is required", "Validation Error")
-	}
-
-	payload := map[string]interface{}{
-		"firstName": firstName,
-		"token":     registerToken,
-		"tokenType": string(AuthTypeRegister),
-	}
-
-	if lastName != "" {
-		payload["lastName"] = lastName
-	}
-
-	c.Logger.Info().Str("firstName", firstName).Msg("Completing registration")
-
-	resp, err := c.sendAndWait(OpAuthConfirm, payload)
-	if err != nil {
-		return "", err
-	}
-
-	token, ok := resp.Payload["token"].(string)
+	loginAttrs, ok := tokenAttrs["LOGIN"].(map[string]interface{})
 	if !ok {
-		return "", NewError("no_token", "No token in response", "Auth Error")
+		return "", NewError("no_login_token", "No LOGIN token in response", "Auth Error")
 	}
 
-	c.Logger.Info().Msg("Registration completed successfully")
+	token, ok := loginAttrs["token"].(string)
+	if !ok || token == "" {
+		return "", NewError("no_token", "Empty LOGIN token", "Auth Error")
+	}
+
+	if profile, ok := resp.Payload["profile"].(map[string]interface{}); ok {
+		if contact, ok := profile["contact"].(map[string]interface{}); ok {
+			contactBytes, _ := json.Marshal(contact)
+			var me Me
+			if err := json.Unmarshal(contactBytes, &me); err == nil {
+				c.Me = &me
+				c.MaxUserID = me.ID
+			}
+		}
+	}
+
+	c.Logger.Info().Msg("QR login confirmed, token received")
 	return token, nil
 }
 
@@ -151,7 +156,7 @@ func (c *Client) Login(authToken string) (map[string]interface{}, error) {
 	c.AuthToken = authToken
 
 	payload := map[string]interface{}{
-		"chatsCount":   100, // Max allowed by API (default was 40)
+		"chatsCount":   100,
 		"chatsSync":    0,
 		"contactsSync": 0,
 		"draftsSync":   0,
@@ -167,12 +172,10 @@ func (c *Client) Login(authToken string) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	// Log chat count
 	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
 		c.Logger.Info().Int("count", len(chatsRaw)).Msg("Got chats from login")
 	}
 
-	// Parse profile to set c.Me and c.MaxUserID
 	if profile, ok := resp.Payload["profile"].(map[string]interface{}); ok {
 		if contact, ok := profile["contact"].(map[string]interface{}); ok {
 			contactBytes, _ := json.Marshal(contact)
@@ -185,14 +188,12 @@ func (c *Client) Login(authToken string) (map[string]interface{}, error) {
 		}
 	}
 
-	// Extract participant IDs from chats and fetch their full contact data
 	contactIDs := c.extractParticipantIDsFromPayload(resp.Payload)
 	if len(contactIDs) > 0 {
 		contacts, err := c.fetchContactsByIDs(contactIDs)
 		if err != nil {
 			c.Logger.Warn().Err(err).Msg("Failed to fetch contacts")
 		} else {
-			// Add fetched contacts to payload (replaces empty contacts array from login)
 			resp.Payload["contacts"] = contacts
 		}
 	}
@@ -213,7 +214,7 @@ func (c *Client) Sync() (map[string]interface{}, error) {
 		"draftsSync":   0,
 		"interactive":  true,
 		"presenceSync": -1,
-		"token":        c.AuthToken, // Token required for sync
+		"token":        c.AuthToken,
 	}
 
 	c.Logger.Info().Msg("Syncing data")
@@ -223,12 +224,10 @@ func (c *Client) Sync() (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	// Log chat count
 	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
 		c.Logger.Info().Int("count", len(chatsRaw)).Msg("Got chats from sync")
 	}
 
-	// Extract participant IDs from chats and fetch their full contact data
 	contactIDs := c.extractParticipantIDsFromPayload(resp.Payload)
 	if len(contactIDs) > 0 {
 		contacts, err := c.fetchContactsByIDs(contactIDs)
@@ -351,7 +350,6 @@ func (c *Client) ConnectAndLogin(authToken string, userAgent *UserAgent) (map[st
 		return nil, err
 	}
 
-	// Start ping loop
 	c.StartPingLoop()
 
 	return syncData, nil
@@ -374,7 +372,6 @@ func (c *Client) ConnectAndSync(userAgent *UserAgent) (map[string]interface{}, e
 		return nil, err
 	}
 
-	// Start ping loop
 	c.StartPingLoop()
 
 	return syncData, nil

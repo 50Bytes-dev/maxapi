@@ -46,73 +46,43 @@ components:
           example: "79001234567"
           type: string
       type: object
-    AuthConfirmBody:
+    AuthQRStartResponse:
+      description: QR auth session created
       properties:
-        code:
-          example: "123456"
+        success:
+          example: true
+          type: boolean
+        qrLink:
+          example: https://max.ru/:auth/6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7
           type: string
+        qrCodeBase64:
+          example: data:image/png;base64,...
+          type: string
+        trackId:
+          example: 6bc2adb2-6b23-4a7d-a96c-320bee4ed0d7
+          type: string
+        pollingInterval:
+          example: 5000
+          type: integer
+        ttl:
+          example: 120000
+          type: integer
+        expiresAt:
+          example: 1776435251750
+          type: integer
       type: object
-    AuthConfirmResponse:
-      description: Response after confirming SMS verification code
+    AuthQRStatusResponse:
+      description: QR auth session status
       properties:
+        success:
+          example: true
+          type: boolean
+        status:
+          example: pending
+          enum: [pending, scanned, authorized, expired]
+          type: string
         authToken:
           example: auth_token_value
-          type: string
-        message:
-          example: Login successful
-          type: string
-        registerToken:
-          example: register_token_value
-          type: string
-        requiresRegistration:
-          example: false
-          type: boolean
-        success:
-          example: true
-          type: boolean
-      type: object
-    AuthRegisterBody:
-      properties:
-        firstName:
-          example: John
-          type: string
-        lastName:
-          example: Doe
-          type: string
-      type: object
-    AuthRegisterResponse:
-      description: Response after successful registration
-      properties:
-        authToken:
-          example: auth_token_value
-          type: string
-        message:
-          example: Registration successful
-          type: string
-        success:
-          example: true
-          type: boolean
-      type: object
-    AuthRequestBody:
-      properties:
-        language:
-          example: ru
-          type: string
-        phone:
-          example: "79001234567"
-          type: string
-      type: object
-    AuthRequestResponse:
-      description: Response after requesting SMS verification code
-      properties:
-        message:
-          example: Verification code sent
-          type: string
-        success:
-          example: true
-          type: boolean
-        tempToken:
-          example: temp_token_value
           type: string
       type: object
     ChatHistoryBody:
@@ -1519,85 +1489,16 @@ paths:
       summary: Update group participants
       tags:
       - Group
-  /session/auth/confirm:
+  /session/auth/qr/start:
     post:
-      description: Verifies the SMS code and returns auth token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthConfirmBody'
-        description: SMS code
-        required: true
+      description: Opens a WebSocket, requests a QR auth session, returns link and base64 PNG.
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthConfirmResponse'
+                $ref: '#/components/schemas/AuthQRStartResponse'
           description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-      security:
-      - ApiKeyAuth: []
-      summary: Confirm SMS verification code
-      tags:
-      - Auth
-  /session/auth/register:
-    post:
-      description: Registers a new user with first and last name
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthRegisterBody'
-        description: User registration data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthRegisterResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-      security:
-      - ApiKeyAuth: []
-      summary: Register new user
-      tags:
-      - Auth
-  /session/auth/request:
-    post:
-      description: Sends an SMS verification code to the specified phone number
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthRequestBody'
-        description: Phone number and language
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthRequestResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
         "500":
           content:
             application/json:
@@ -1606,7 +1507,43 @@ paths:
           description: Internal Server Error
       security:
       - ApiKeyAuth: []
-      summary: Request SMS verification code
+      summary: Start QR auth session
+      tags:
+      - Auth
+  /session/auth/qr/status:
+    get:
+      description: Poll the QR auth session. When scanned, the server exchanges the session for an auth token and returns it.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthQRStatusResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+      security:
+      - ApiKeyAuth: []
+      summary: Poll QR auth status
+      tags:
+      - Auth
+  /session/auth/qr/cancel:
+    post:
+      description: Close an in-progress QR auth session and clear the stored trackId.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+          description: OK
+      security:
+      - ApiKeyAuth: []
+      summary: Cancel QR auth session
       tags:
       - Auth
   /session/connect:

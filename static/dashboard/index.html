@@ -289,59 +289,25 @@
 
   <!-- Session Modals -->
 
-  <div class="ui modal" id="modalLoginSMS"><i class="close icon"></i>
-    <div class="header"> Login with SMS Verification </div>
+  <div class="ui modal" id="modalLoginQR"><i class="close icon"></i>
+    <div class="header"> Login with QR Code </div>
     <div class="content">
       <div class="ui message info">
-        <div class="header" id="smsInfo">How to login?</div>
-        <ol id="smsHelp">
-          <li>Enter your phone number with country code</li>
-          <li>You will receive an SMS with a verification code</li>
-          <li>Enter the code to complete login</li>
+        <div class="header">How to login?</div>
+        <ol>
+          <li>Open MAX on your phone</li>
+          <li>Go to <b>Settings &rarr; Devices &rarr; Scan QR code</b></li>
+          <li>Point the camera at the code below</li>
         </ol>
       </div>
-      
-      <!-- Step 1: Phone Number -->
-      <div class="ui form" id="phoneStep">
-        <div class="field">
-          <label>Phone Number</label>
-          <input id="smsPhoneInput" type="text" placeholder="Enter phone number (e.g., 79001234567)">
-          <small>Enter your phone number without + sign</small>
+      <div class="ui center aligned basic segment" id="qrStep">
+        <div id="qrImageWrapper" style="min-height:280px;display:flex;align-items:center;justify-content:center;">
+          <div class="ui active inline loader" id="qrLoader"></div>
+          <img id="qrImage" alt="QR code" style="display:none;max-width:280px;width:100%;height:auto;"/>
         </div>
-        <button class="ui primary button" id="requestCodeBtn">
-          <i class="mobile icon"></i> Request SMS Code
-        </button>
-      </div>
-      
-      <!-- Step 2: Verification Code -->
-      <div class="ui form hidden" id="codeStep">
-        <div class="field">
-          <label>Verification Code</label>
-          <input id="smsCodeInput" type="text" placeholder="Enter the code from SMS">
-        </div>
-        <button class="ui primary button" id="confirmCodeBtn">
-          <i class="check icon"></i> Confirm Code
-        </button>
-        <button class="ui secondary button" id="backToPhoneBtn">
-          <i class="arrow left icon"></i> Back
-        </button>
-      </div>
-      
-      <!-- Step 3: Registration (for new users) -->
-      <div class="ui form hidden" id="registerStep">
-        <div class="ui info message">
-          <p>This phone number is not registered. Please provide your name to complete registration.</p>
-        </div>
-        <div class="field">
-          <label>First Name</label>
-          <input id="regFirstName" type="text" placeholder="Enter your first name">
-        </div>
-        <div class="field">
-          <label>Last Name (optional)</label>
-          <input id="regLastName" type="text" placeholder="Enter your last name">
-        </div>
-        <button class="ui primary button" id="registerBtn">
-          <i class="user plus icon"></i> Complete Registration
+        <div id="qrStatusMessage" class="ui basic segment" style="padding:6px;">Requesting QR code…</div>
+        <button class="ui primary button" id="qrRefreshBtn">
+          <i class="refresh icon"></i> Refresh QR
         </button>
       </div>
     </div>
@@ -365,7 +331,11 @@
             <!-- Connection -->
             <option value="Connected">Connected</option>
             <option value="Disconnected">Disconnected</option>
-            <option value="AuthCodeSent">Auth Code Sent</option>
+            <option value="QRGenerated">QR Generated</option>
+            <option value="QRScanned">QR Scanned</option>
+            <option value="QRAuthorized">QR Authorized</option>
+            <option value="QRExpired">QR Expired</option>
+            <option value="AuthExpired">Auth Expired</option>
             <!-- Chat and Groups -->
             <option value="ChatUpdate">Chat Update</option>
             <option value="Typing">Typing</option>
@@ -544,7 +514,11 @@
             <!-- Connection -->
             <option value="Connected">Connected</option>
             <option value="Disconnected">Disconnected</option>
-            <option value="AuthCodeSent">Auth Code Sent</option>
+            <option value="QRGenerated">QR Generated</option>
+            <option value="QRScanned">QR Scanned</option>
+            <option value="QRAuthorized">QR Authorized</option>
+            <option value="QRExpired">QR Expired</option>
+            <option value="AuthExpired">Auth Expired</option>
             <!-- Chat and Groups -->
             <option value="ChatUpdate">Chat Update</option>
             <option value="Typing">Typing</option>

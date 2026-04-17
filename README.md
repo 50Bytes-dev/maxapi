@@ -5,7 +5,7 @@ MaxAPI is a multi-tenant REST API gateway for MAX Messenger, providing a simple 
 ## Features
 
 - **Multi-tenant architecture**: Support multiple MAX accounts on a single server
-- **SMS Authentication**: Authenticate via phone number and SMS code
+- **QR Authentication**: Scan a QR code in the MAX mobile app to log in
 - **Real-time webhooks**: Receive events via webhooks or RabbitMQ
 - **Media handling**: Upload/download photos, videos, audio, and documents
 - **Group management**: Create, manage, and interact with groups and channels
@@ -15,7 +15,7 @@ MaxAPI is a multi-tenant REST API gateway for MAX Messenger, providing a simple 
 
 | Feature | WhatsApp (WuzAPI) | MAX (MaxAPI) |
 |---------|-------------------|--------------|
-| Authentication | QR Code | SMS Code |
+| Authentication | QR Code | QR Code |
 | User ID | JID (`phone@s.whatsapp.net`) | Numeric `int64` |
 | Dialog ID | Automatic | `user1_id XOR user2_id` |
 | Group Creation | Separate API | MSG_SEND with CONTROL attachment |
@@ -97,23 +97,27 @@ curl -X POST http://localhost:5555/admin/users \
 
 This returns a user token.
 
-### 2. Request SMS Code
+### 2. Request QR Code
 
 ```bash
-curl -X POST http://localhost:5555/session/auth/request \
-  -H "token: USER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "+79001234567"}'
+curl -X POST http://localhost:5555/session/auth/qr/start \
+  -H "token: USER_TOKEN"
 ```
 
-### 3. Confirm SMS Code
+Returns `qrLink`, `qrCodeBase64` (PNG data-URL), `trackId`, `pollingInterval` (ms), `ttl` (ms).
+Render `qrCodeBase64` in a browser or decode `qrLink` and display it; scan with the MAX mobile app
+(Settings → Devices → Scan QR code).
+
+### 3. Poll QR Status
 
 ```bash
-curl -X POST http://localhost:5555/session/auth/confirm \
-  -H "token: USER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"code": "123456"}'
+curl -H "token: USER_TOKEN" \
+  http://localhost:5555/session/auth/qr/status
 ```
+
+Returns `{"status": "pending" | "scanned" | "authorized" | "expired"}`. When `authorized`, the
+response also includes `authToken` and it is persisted server-side — no extra step needed. If
+`expired`, call `/session/auth/qr/start` again.
 
 ### 4. Connect
 
@@ -140,9 +144,9 @@ See [API.md](API.md) for the complete API documentation.
 ### Available Endpoints
 
 #### Session/Auth
-- `POST /session/auth/request` - Request SMS code
-- `POST /session/auth/confirm` - Confirm SMS code
-- `POST /session/auth/register` - Register new user
+- `POST /session/auth/qr/start` - Start QR auth session (returns link + base64 PNG)
+- `GET /session/auth/qr/status` - Poll QR auth status (`pending` / `scanned` / `authorized` / `expired`)
+- `POST /session/auth/qr/cancel` - Cancel in-progress QR session
 - `POST /session/connect` - Connect to MAX
 - `POST /session/disconnect` - Disconnect
 - `POST /session/logout` - Logout
@@ -204,7 +208,11 @@ See [API.md](API.md) for the complete API documentation.
 | `ReadReceipt` | Messages were read |
 | `Connected` | Connected to MAX |
 | `Disconnected` | Disconnected |
-| `AuthCodeSent` | Auth code sent |
+| `QRGenerated` | New QR auth session created |
+| `QRScanned` | User scanned QR code in the mobile app |
+| `QRAuthorized` | Auth token received — ready for `/session/connect` |
+| `QRExpired` | QR session expired before scan |
+| `AuthExpired` | Stored auth token is no longer valid |
 | `ChatUpdate` | Chat was updated |
 | `Typing` | User is typing |
 | `ReactionChange` | Reaction changed |
