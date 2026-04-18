@@ -530,6 +530,46 @@ GET /admin/users
 Authorization: <admin_token>
 ```
 
+### Get User by ID
+
+Returns full details for a single user. Secrets are never returned in cleartext:
+
+- `auth_token` → exposed only as `auth_configured: bool`
+- `s3_access_key` / `s3_secret_key` → omitted
+- `proxy_url` → password component masked as `***`; `proxy_configured: bool`
+  tells you whether any proxy is set
+
+```http
+GET /admin/users/{userid}
+Authorization: <admin_token>
+```
+
+Response:
+```json
+{
+    "success": true,
+    "data": {
+        "id": "a1b2c3d4-...",
+        "name": "Acme Bot",
+        "token": "<user_token>",
+        "webhook": "https://example.com/webhook",
+        "max_user_id": 123456789,
+        "device_id": "uuid-...",
+        "connected": true,
+        "auth_configured": true,
+        "events": ["Message", "ReadReceipt"],
+        "proxy_configured": true,
+        "proxy_url": "http://user:***@proxy.internal:3128",
+        "history": 100,
+        "s3_enabled": false,
+        "s3_endpoint": "",
+        "s3_region": "",
+        "s3_bucket": "",
+        "media_delivery": "base64"
+    }
+}
+```
+
 ### Create User
 
 ```http
@@ -579,6 +619,8 @@ Subscribe to these events via the `subscribe` array in `/session/connect`:
 | `ReadReceipt` | Messages were read |
 | `Connected` | Successfully connected |
 | `Disconnected` | Connection lost |
+| `Reconnecting` | Reconnect attempt in progress (first + every 10th attempt) |
+| `ReconnectExhausted` | Reconnect budget (`MAX_CONNECT_RETRIES`) exhausted; session stopped |
 | `QRGenerated` | QR code available (initial or refreshed). Payload: `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt`. `GET /session/qr` returns the same PNG for pull consumers. |
 | `QRScanned` | User scanned QR in the mobile app |
 | `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
@@ -595,11 +637,14 @@ Subscribe to these events via the `subscribe` array in `/session/connect`:
 
 ### Webhook Payload Format
 
+Every webhook body (HTTP JSON and RabbitMQ JSON) carries an identity block in
+addition to the event-specific `event` payload:
+
 ```json
 {
     "type": "Message",
     "opcode": 128,
-  "event": {
+    "event": {
         "chatId": 123456789,
         "message": {
             "id": 111222333,
@@ -608,7 +653,73 @@ Subscribe to these events via the `subscribe` array in `/session/connect`:
             "time": 1699999999999,
             "type": "TEXT"
         }
-  }
+    },
+    "userID": "a1b2c3d4-...",
+    "instanceID": "a1b2c3d4-...",
+    "instanceName": "My Instance",
+    "eventTimestamp": 1700000000
+}
+```
+
+RabbitMQ payloads additionally include `"serverHost"` (the hostname of the
+MaxAPI instance that emitted the event), and — when `RABBITMQ_EXCHANGE` is
+configured — publish with routing key = event type, headers
+`x-instance-id` and `x-event-type`, `ContentType: application/json`,
+`DeliveryMode: persistent`, `MessageId: <uuid>`, `Timestamp: <now>`.
+
+**The webhook payload never contains the user API `token`.** Identify the
+MaxAPI user by `instanceID` and authenticate your receiver via your own
+mechanism (shared secret in the `Authorization` header, HMAC over the body,
+mTLS, …).
+
+### Webhook Delivery Guarantees
+
+The HTTP client retries delivery with exponential backoff:
+
+- Triggers: network errors, HTTP `5xx`, `408`, `429`.
+- `4xx` is treated as a client contract failure and is delivered exactly once.
+- Backoff: `WEBHOOK_RETRY_DELAY × 2^(attempt-1)` seconds, up to
+  `WEBHOOK_RETRY_COUNT` attempts. Defaults: 5 attempts starting at 30 s.
+
+Multipart webhooks (file attachments) share the same policy and are additionally
+guarded by a per-user concurrency semaphore (`MAXAPI_USER_CONCURRENCY`) so a
+slow subscriber cannot consume unbounded file descriptors for a single user.
+
+### RabbitMQ Delivery Guarantees
+
+- Persistent messages (`DeliveryMode: persistent`) with durable queue.
+- Transparent reconnect on broker restart (`RABBITMQ_RETRY_COUNT` /
+  `RABBITMQ_RETRY_DELAY`). Publishes during reconnect are dropped at the
+  publisher with a warning log.
+- Optional topic exchange — set `RABBITMQ_EXCHANGE` to bind consumers to
+  specific event types via routing key.
+
+---
+
+## Health
+
+### Get Health
+
+Unauthenticated liveness + readiness endpoint for orchestrators.
+
+```http
+GET /health
+```
+
+Response (`200 OK` when healthy, `503 Service Unavailable` when DB is down):
+
+```json
+{
+    "success": true,
+    "status": "ok",
+    "version": "2.0.0-max",
+    "uptime_seconds": 12345,
+    "db_ok": true,
+    "rabbitmq_ok": true,
+    "connected_users": 42,
+    "goroutines": 87,
+    "mem_alloc_mb": 67,
+    "timestamp": 1700000000
 }
 ```
 
@@ -621,9 +732,23 @@ All error responses follow this format:
 ```json
 {
     "success": false,
-    "error": "Error description"
+    "error": "human-readable description",
+    "code": "MACHINE_CODE"
 }
 ```
+
+`code` is a stable machine-readable constant that clients can branch on; the
+`error` text is free-form and may evolve. Known codes:
+
+| Code | Meaning |
+|------|---------|
+| `INVALID_INPUT` | Malformed payload, missing required field, bad parameter |
+| `UNAUTHORIZED` | Missing/invalid admin or user token |
+| `FORBIDDEN` | Authenticated but not allowed |
+| `NOT_FOUND` | Resource does not exist |
+| `NOT_CONNECTED` | User has no active MAX session |
+| `AUTH_EXPIRED` | Stored auth token is no longer valid — re-authenticate |
+| `INTERNAL_ERROR` | Server-side failure |
 
 Common HTTP status codes:
 - `400` - Bad Request (invalid parameters)

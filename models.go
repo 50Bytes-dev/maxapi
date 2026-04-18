@@ -5,10 +5,13 @@ package main
 // ========== BASE RESPONSE ==========
 
 // ErrorResponse represents an error response
-// @Description Error response format
+// @Description Error response format. `code` is a stable machine-readable
+// @Description constant (e.g. INVALID_INPUT, NOT_FOUND, AUTH_EXPIRED); `error`
+// @Description is a free-form human description.
 type ErrorResponse struct {
 	Success bool   `json:"success" example:"false"`
 	Error   string `json:"error" example:"error message"`
+	Code    string `json:"code,omitempty" example:"INVALID_INPUT"`
 }
 
 // MessageResponse represents a simple success response with message
@@ -303,7 +306,8 @@ type DownloadFileBody struct {
 	VideoID   int64 `json:"videoId" example:"111222333"`
 }
 
-// UserResponse represents a user in the system
+// UserResponse represents a user row returned by GET /admin/users.
+// @Description Summary fields for a user in the system
 type UserResponse struct {
 	ID            string `json:"id" example:"a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0"`
 	Name          string `json:"name" example:"John Doe"`
@@ -313,6 +317,54 @@ type UserResponse struct {
 	Events        string `json:"events" example:"All"`
 	Connected     int    `json:"connected" example:"1"`
 	Authenticated bool   `json:"authenticated" example:"true"`
+}
+
+// UserDetail is the enriched shape returned by GET /admin/users/{userid}.
+// Secrets (auth_token, s3 keys, proxy password) are never returned raw:
+// `auth_configured` / `proxy_configured` expose presence as a boolean and
+// `proxy_url` is emitted with the password replaced by ***.
+// @Description Detailed user record with secrets masked.
+type UserDetail struct {
+	ID              string   `json:"id" example:"a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0"`
+	Name            string   `json:"name" example:"John Doe"`
+	Token           string   `json:"token" example:"abc123def456"`
+	Webhook         string   `json:"webhook" example:"https://example.com/webhook"`
+	MaxUserID       int64    `json:"max_user_id" example:"123456789"`
+	DeviceID        string   `json:"device_id" example:"6e8ed92f-..."`
+	Connected       bool     `json:"connected" example:"true"`
+	ConnectedFlag   bool     `json:"connected_flag" example:"true"`
+	AuthConfigured  bool     `json:"auth_configured" example:"true"`
+	Events          []string `json:"events" example:"Message,ReadReceipt"`
+	ProxyConfigured bool     `json:"proxy_configured" example:"false"`
+	ProxyURL        string   `json:"proxy_url" example:"http://user:***@proxy.internal:3128"`
+	History         int      `json:"history" example:"100"`
+	S3Enabled       bool     `json:"s3_enabled" example:"false"`
+	S3Endpoint      string   `json:"s3_endpoint" example:""`
+	S3Region        string   `json:"s3_region" example:""`
+	S3Bucket        string   `json:"s3_bucket" example:""`
+	MediaDelivery   string   `json:"media_delivery" example:"base64"`
+}
+
+// UserDetailResponse wraps UserDetail in the standard response envelope.
+// @Description GET /admin/users/{userid} response envelope.
+type UserDetailResponse struct {
+	Success bool       `json:"success" example:"true"`
+	Data    UserDetail `json:"data"`
+}
+
+// HealthResponse reports liveness + readiness metadata.
+// @Description Snapshot of process + connection health.
+type HealthResponse struct {
+	Success        bool   `json:"success" example:"true"`
+	Status         string `json:"status" example:"ok"`
+	Version        string `json:"version" example:"2.0.0-max"`
+	UptimeSeconds  int64  `json:"uptime_seconds" example:"12345"`
+	DBOk           bool   `json:"db_ok" example:"true"`
+	RabbitMQOk     bool   `json:"rabbitmq_ok" example:"true"`
+	ConnectedUsers int    `json:"connected_users" example:"42"`
+	Goroutines     int    `json:"goroutines" example:"87"`
+	MemAllocMB     uint64 `json:"mem_alloc_mb" example:"67"`
+	Timestamp      int64  `json:"timestamp" example:"1700000000"`
 }
 
 // AddUserBody represents the request body for adding a user

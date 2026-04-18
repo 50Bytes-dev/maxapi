@@ -43,6 +43,9 @@ func (s *server) routes() {
 			Logger()
 	}
 
+	// Health endpoint (unauthenticated for orchestrators / load balancers)
+	s.router.Handle("/health", s.GetHealth()).Methods("GET")
+
 	// Admin routes (require admin token)
 	adminRoutes := s.router.PathPrefix("/admin").Subrouter()
 	adminRoutes.Use(s.authadmin)

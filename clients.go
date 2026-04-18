@@ -108,6 +108,20 @@ func (cm *ClientManager) IsConnected(userID string) bool {
 	return false
 }
 
+// CountConnected returns the number of users currently holding a live MAX
+// WebSocket. Used by /health to expose liveness at a glance.
+func (cm *ClientManager) CountConnected() int {
+	cm.RLock()
+	defer cm.RUnlock()
+	n := 0
+	for _, c := range cm.maxClients {
+		if c != nil && c.IsConnected() {
+			n++
+		}
+	}
+	return n
+}
+
 // NewKillChannel replaces any existing kill channel for the user with a fresh
 // buffered channel and returns it. Buffered so that a lone sender never blocks
 // when no goroutine is currently selecting on the channel.

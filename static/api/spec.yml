@@ -258,8 +258,13 @@ components:
           type: string
       type: object
     ErrorResponse:
-      description: Error response format
+      description: Error response format. `code` is a stable machine-readable constant
+        (e.g. INVALID_INPUT, NOT_FOUND, AUTH_EXPIRED); `error` is a free-form human
+        description.
       properties:
+        code:
+          example: INVALID_INPUT
+          type: string
         error:
           example: error message
           type: string
@@ -305,6 +310,40 @@ components:
           type: integer
         topic:
           example: Group description
+          type: string
+      type: object
+    HealthResponse:
+      description: Snapshot of process + connection health.
+      properties:
+        connected_users:
+          example: 42
+          type: integer
+        db_ok:
+          example: true
+          type: boolean
+        goroutines:
+          example: 87
+          type: integer
+        mem_alloc_mb:
+          example: 67
+          type: integer
+        rabbitmq_ok:
+          example: true
+          type: boolean
+        status:
+          example: ok
+          type: string
+        success:
+          example: true
+          type: boolean
+        timestamp:
+          example: 1700000000
+          type: integer
+        uptime_seconds:
+          example: 12345
+          type: integer
+        version:
+          example: 2.0.0-max
           type: string
       type: object
     ImageBody:
@@ -461,6 +500,78 @@ components:
           type: array
           uniqueItems: false
       type: object
+    UserDetail:
+      description: Detailed user record with secrets masked.
+      properties:
+        auth_configured:
+          example: true
+          type: boolean
+        connected:
+          example: true
+          type: boolean
+        connected_flag:
+          example: true
+          type: boolean
+        device_id:
+          example: 6e8ed92f-...
+          type: string
+        events:
+          example:
+          - Message
+          - ReadReceipt
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        history:
+          example: 100
+          type: integer
+        id:
+          example: a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0
+          type: string
+        max_user_id:
+          example: 123456789
+          type: integer
+        media_delivery:
+          example: base64
+          type: string
+        name:
+          example: John Doe
+          type: string
+        proxy_configured:
+          example: false
+          type: boolean
+        proxy_url:
+          example: http://user:***@proxy.internal:3128
+          type: string
+        s3_bucket:
+          example: ""
+          type: string
+        s3_enabled:
+          example: false
+          type: boolean
+        s3_endpoint:
+          example: ""
+          type: string
+        s3_region:
+          example: ""
+          type: string
+        token:
+          example: abc123def456
+          type: string
+        webhook:
+          example: https://example.com/webhook
+          type: string
+      type: object
+    UserDetailResponse:
+      description: GET /admin/users/{userid} response envelope.
+      properties:
+        data:
+          $ref: '#/components/schemas/UserDetail'
+        success:
+          example: true
+          type: boolean
+      type: object
     UserInfoBody:
       properties:
         userIds:
@@ -486,6 +597,7 @@ components:
           uniqueItems: false
       type: object
     UserResponse:
+      description: Summary fields for a user in the system
       properties:
         authenticated:
           example: true
@@ -661,7 +773,9 @@ paths:
       tags:
       - Admin
     get:
-      description: Returns a single user by their ID.
+      description: |-
+        Returns a single user by their ID. Secrets (auth_token, s3 keys,
+        proxy password) are never returned raw — see UserDetail.
       parameters:
       - description: User ID
         in: path
@@ -674,8 +788,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/UserDetailResponse'
           description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
         "404":
           content:
             application/json:
@@ -1493,6 +1613,25 @@ paths:
       summary: Update group participants
       tags:
       - Group
+  /health:
+    get:
+      description: Liveness + readiness snapshot. Returns 200 when DB pings, 503 otherwise.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+          description: OK
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+          description: Service Unavailable
+      summary: Health check
+      tags:
+      - Health
   /session/connect:
     post:
       description: Kicks off a QR auth session when no auth token is stored, or reconnects

@@ -1,5 +1,25 @@
 package main
 
+// Tunables for MAX WebSocket reconnect loop. Overridable via -maxconnect* flags
+// or MAX_CONNECT_* environment variables.
+const (
+	defaultConnectRetryDelay = 5   // seconds, first backoff wait
+	defaultConnectRetryCap   = 300 // seconds, max backoff wait per attempt
+	defaultConnectMaxRetries = 0   // 0 = retry forever
+)
+
+// Standardised error codes returned in JSON error responses. Consumers should
+// branch on `code`; `error` is a human-readable description that may evolve.
+const (
+	ErrInvalidInput    = "INVALID_INPUT"
+	ErrNotConnected    = "NOT_CONNECTED"
+	ErrInternalFailure = "INTERNAL_ERROR"
+	ErrAuthExpired     = "AUTH_EXPIRED"
+	ErrNotFound        = "NOT_FOUND"
+	ErrForbidden       = "FORBIDDEN"
+	ErrUnauthorized    = "UNAUTHORIZED"
+)
+
 // List of supported event types for MAX Messenger
 var supportedEventTypes = []string{
 	// Messages
@@ -11,11 +31,12 @@ var supportedEventTypes = []string{
 	"ReadReceipt", // NOTIF_MARK (130)
 
 	// Connection
-	"Connected",    // Successful LOGIN (deprecated, use Sync)
-	"Disconnected", // WebSocket closed / RECONNECT (3)
-	"Reconnecting", // Attempting to reconnect
-	"Sync",         // Synchronization data on connect/reconnect
-	"LoggedOut",    // Session terminated (from MAX app or API)
+	"Connected",          // Successful LOGIN (deprecated, use Sync)
+	"Disconnected",       // WebSocket closed / RECONNECT (3)
+	"Reconnecting",       // Attempting to reconnect
+	"ReconnectExhausted", // Gave up after configured retry cap
+	"Sync",               // Synchronization data on connect/reconnect
+	"LoggedOut",          // Session terminated (from MAX app or API)
 
 	// Authentication
 	"QRGenerated",  // QR session created or refreshed, qrLink issued (carries refreshed code too)

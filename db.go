@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/rs/zerolog/log"
 	_ "modernc.org/sqlite"
 )
 
@@ -156,8 +158,12 @@ func initializeSQLite(config DatabaseConfig) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("could not create dbdata directory: %w", err)
 	}
 
-	dbPath := filepath.Join(config.Path, "users.db")
-	db, err := sqlx.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)&_busy_timeout=3000")
+	// WAL + busy_timeout(10s) + synchronous=NORMAL: readers don't block writers,
+	// single writer serialized, reasonable durability. MaxOpen/Idle=1 because
+	// modernc.org/sqlite serializes writes at the driver level anyway.
+	dbPath := filepath.ToSlash(filepath.Join(config.Path, "users.db"))
+	dsn := dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)"
+	db, err := sqlx.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
@@ -165,6 +171,14 @@ func initializeSQLite(config DatabaseConfig) (*sqlx.DB, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping sqlite database: %w", err)
 	}
+
+	var jm string
+	if err := db.Get(&jm, "PRAGMA journal_mode"); err == nil && !strings.EqualFold(jm, "wal") {
+		log.Warn().Str("mode", jm).Msg("SQLite WAL pragma not honored by driver")
+	}
+
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	return db, nil
 }

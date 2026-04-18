@@ -970,7 +970,7 @@ async function connect(token = '') {
     });
     const statusData = await statusRes.json();
 
-    if (!statusData?.data?.authenticated) {
+    if (!statusData?.authenticated) {
         // Not authenticated yet — start QR login flow.
         modalQRLogin(token);
         return { success: false, error: 'Authentication required' };
@@ -1205,9 +1205,14 @@ async function pollQRAndStatus(token, interval) {
         ]);
 
         const statusData = await statusRes.json();
-        if (statusData && statusData.connected) {
+        // loggedIn = connected AND auth_token stored; `connected` alone is true
+        // during the QR auth websocket handshake, before the user has scanned.
+        if (statusData && statusData.loggedIn) {
             setQRStatus('Connected!');
             showSuccess('Connected successfully!');
+            // Tell onHidden not to fire /session/disconnect — we're hiding the
+            // modal because the user is now logged in, not because they cancelled.
+            scanned = true;
             $('#modalLoginQR').modal('hide');
             updateAdmin();
             return;

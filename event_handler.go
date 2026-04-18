@@ -425,13 +425,42 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 	s.runClientLoop(userID, authToken, client, mycli)
 }
 
+// reconnectBackoff returns the delay for the Nth reconnect attempt (1-indexed).
+// Doubles per attempt from -maxconnectdelay up to -maxconnectcap seconds.
+func reconnectBackoff(attempt int) time.Duration {
+	base := defaultConnectRetryDelay
+	if connectRetryDelay != nil && *connectRetryDelay > 0 {
+		base = *connectRetryDelay
+	}
+	cap := defaultConnectRetryCap
+	if connectRetryCap != nil && *connectRetryCap > 0 {
+		cap = *connectRetryCap
+	}
+	shift := uint(attempt - 1)
+	if shift > 20 {
+		shift = 20
+	}
+	secs := base << shift
+	if secs <= 0 || secs > cap {
+		secs = cap
+	}
+	return time.Duration(secs) * time.Second
+}
+
+// reconnectLimit returns the configured max attempts (0 means infinite).
+func reconnectLimit() int {
+	if connectMaxRetries == nil {
+		return defaultConnectMaxRetries
+	}
+	return *connectMaxRetries
+}
+
 // runClientLoop supervises the connected client: detects drops, backs off and
 // reconnects, and exits on a kill signal or when the client is replaced by a
 // newer startClient invocation. Intended to run in its own goroutine.
 func (s *server) runClientLoop(userID string, authToken string, client *maxclient.Client, mycli *MyClient) {
 	reconnectAttempts := 0
-	maxReconnectAttempts := 120
-	reconnectDelay := 5 * time.Second
+	maxReconnectAttempts := reconnectLimit()
 
 	killCh := clientManager.GetKillChannel(userID)
 	for {
@@ -456,15 +485,16 @@ func (s *server) runClientLoop(userID string, authToken string, client *maxclien
 			if !client.IsConnected() {
 				reconnectAttempts++
 
-				if reconnectAttempts > maxReconnectAttempts {
+				if maxReconnectAttempts > 0 && reconnectAttempts > maxReconnectAttempts {
 					log.Error().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Max reconnect attempts reached, giving up")
-					cleanupClient(userID)
 
 					postmap := map[string]interface{}{
-						"type":   "Disconnected",
-						"reason": "max_reconnect_attempts",
+						"type":     "ReconnectExhausted",
+						"attempts": reconnectAttempts - 1,
+						"reason":   "max_reconnect_attempts",
 					}
 					sendEventWithWebHook(mycli, postmap, "")
+					cleanupClient(userID)
 
 					_, err := s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
 					if err != nil {
@@ -473,7 +503,8 @@ func (s *server) runClientLoop(userID string, authToken string, client *maxclien
 					return
 				}
 
-				log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Int("max", maxReconnectAttempts).Msg("Connection lost, attempting reconnect...")
+				backoff := reconnectBackoff(reconnectAttempts)
+				log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Int("max", maxReconnectAttempts).Dur("backoff", backoff).Msg("Connection lost, attempting reconnect...")
 
 				// Send reconnecting event (only every 10 attempts to avoid spam)
 				if reconnectAttempts == 1 || reconnectAttempts%10 == 0 {
@@ -485,7 +516,15 @@ func (s *server) runClientLoop(userID string, authToken string, client *maxclien
 					sendEventWithWebHook(mycli, postmap, "")
 				}
 
-				time.Sleep(reconnectDelay)
+				select {
+				case <-killCh:
+					log.Info().Str("userid", userID).Msg("Kill signal during reconnect backoff")
+					client.Disconnect()
+					cleanupClient(userID)
+					_, _ = s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
+					return
+				case <-time.After(backoff):
+				}
 
 				// Check again if client was replaced during the delay
 				currentClient := clientManager.GetMaxClient(userID)
@@ -552,8 +591,7 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 	}
 
 	reconnectAttempts := 0
-	maxReconnectAttempts := 120
-	reconnectDelay := 5 * time.Second
+	maxReconnectAttempts := reconnectLimit()
 
 	killCh := clientManager.GetKillChannel(userID)
 	for {
@@ -576,20 +614,22 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 			if !client.IsConnected() {
 				reconnectAttempts++
 
-				if reconnectAttempts > maxReconnectAttempts {
+				if maxReconnectAttempts > 0 && reconnectAttempts > maxReconnectAttempts {
 					log.Error().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Max reconnect attempts reached")
-					cleanupClient(userID)
 					postmap := map[string]interface{}{
-						"type":   "Disconnected",
-						"reason": "max_reconnect_attempts",
+						"type":     "ReconnectExhausted",
+						"attempts": reconnectAttempts - 1,
+						"reason":   "max_reconnect_attempts",
 					}
 					sendEventWithWebHook(mycli, postmap, "")
+					cleanupClient(userID)
 					s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
 					return
 				}
 
+				backoff := reconnectBackoff(reconnectAttempts)
 				if reconnectAttempts == 1 || reconnectAttempts%10 == 0 {
-					log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Msg("Reconnecting...")
+					log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Dur("backoff", backoff).Msg("Reconnecting...")
 					postmap := map[string]interface{}{
 						"type":    "Reconnecting",
 						"attempt": reconnectAttempts,
@@ -598,7 +638,15 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 					sendEventWithWebHook(mycli, postmap, "")
 				}
 
-				time.Sleep(reconnectDelay)
+				select {
+				case <-killCh:
+					log.Info().Str("userid", userID).Msg("Kill signal during maintainConnection backoff")
+					client.Disconnect()
+					cleanupClient(userID)
+					s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
+					return
+				case <-time.After(backoff):
+				}
 
 				// Check if client was replaced during the delay
 				currentClient := clientManager.GetMaxClient(userID)

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -478,16 +480,6 @@ func (s *server) Connect() http.HandlerFunc {
 		userinfocache.Set(token, v, cache.NoExpiration)
 		clientManager.UpdateMyClientSubscriptions(txtid, subscribedEvents)
 
-		if clientManager.IsConnected(txtid) {
-			s.Respond(w, r, http.StatusOK, map[string]interface{}{
-				"success":          true,
-				"details":          "Already connected to MAX",
-				"events":           eventstring,
-				"alreadyConnected": true,
-			})
-			return
-		}
-
 		var authToken, deviceID string
 		err = s.db.QueryRow("SELECT auth_token, device_id FROM users WHERE id=$1", txtid).Scan(&authToken, &deviceID)
 		if err != nil {
@@ -496,8 +488,9 @@ func (s *server) Connect() http.HandlerFunc {
 		}
 
 		if authToken == "" {
-			// Fresh user — start a QR auth session. The first QR is persisted before
-			// we respond so that an immediate GET /session/qr returns it.
+			// No stored auth yet. A live client here is a QR-auth websocket, not
+			// a logged-in session, so don't report alreadyConnected — restart/continue
+			// the QR flow instead. startQRSession closes any stale client first.
 			if _, err := s.startQRSession(txtid, token); err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
@@ -506,6 +499,16 @@ func (s *server) Connect() http.HandlerFunc {
 				"success": true,
 				"details": "Awaiting QR scan",
 				"events":  eventstring,
+			})
+			return
+		}
+
+		if clientManager.IsConnected(txtid) {
+			s.Respond(w, r, http.StatusOK, map[string]interface{}{
+				"success":          true,
+				"details":          "Already connected to MAX",
+				"events":           eventstring,
+				"alreadyConnected": true,
 			})
 			return
 		}
@@ -550,7 +553,11 @@ func (s *server) GetQR() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
-		if clientManager.IsConnected(txtid) {
+		// "logged in" means we have a stored auth_token, not merely that a websocket
+		// is up — the QR auth websocket is also a live connection.
+		var authToken string
+		_ = s.db.Get(&authToken, "SELECT COALESCE(auth_token,'') FROM users WHERE id=$1", txtid)
+		if authToken != "" {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("already logged in"))
 			return
 		}
@@ -1261,6 +1268,8 @@ func (s *server) SendVideo() http.HandlerFunc {
 // @Router /chat/downloadimage [post]
 func (s *server) DownloadImage() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
 		decoder := json.NewDecoder(r.Body)
 		var msg DownloadBody
 		if err := decoder.Decode(&msg); err != nil {
@@ -1271,6 +1280,11 @@ func (s *server) DownloadImage() http.HandlerFunc {
 		if msg.URL == "" {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("url is required"))
 			return
+		}
+
+		if userSemaphoreManager != nil {
+			userSemaphoreManager.Acquire(txtid)
+			defer userSemaphoreManager.Release(txtid)
 		}
 
 		data, err := downloadMedia(msg.URL)
@@ -1318,6 +1332,11 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 		if err := decoder.Decode(&msg); err != nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
 			return
+		}
+
+		if userSemaphoreManager != nil {
+			userSemaphoreManager.Acquire(txtid)
+			defer userSemaphoreManager.Release(txtid)
 		}
 
 		fileInfo, err := client.GetFileDownloadURL(msg.ChatID, msg.MessageID, msg.FileID)
@@ -1371,6 +1390,11 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 		if err := decoder.Decode(&msg); err != nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
 			return
+		}
+
+		if userSemaphoreManager != nil {
+			userSemaphoreManager.Acquire(txtid)
+			defer userSemaphoreManager.Release(txtid)
 		}
 
 		videoInfo, err := client.GetVideoDownloadURL(msg.ChatID, msg.MessageID, msg.VideoID)
@@ -2240,36 +2264,121 @@ func (s *server) ListUsers() http.HandlerFunc {
 	}
 }
 
+// userDetailRow carries every column we might want to project from `users`.
+// Secrets (auth_token, s3 keys, proxy password) stay on this struct but never
+// leave it raw — GetUserByID masks or omits them before responding.
+type userDetailRow struct {
+	ID            string  `db:"id"`
+	Name          string  `db:"name"`
+	Token         string  `db:"token"`
+	Webhook       string  `db:"webhook"`
+	MaxUserID     *int64  `db:"max_user_id"`
+	AuthToken     *string `db:"auth_token"`
+	DeviceID      *string `db:"device_id"`
+	Connected     int     `db:"connected"`
+	Events        string  `db:"events"`
+	ProxyURL      *string `db:"proxy_url"`
+	History       int     `db:"history"`
+	S3Enabled     bool    `db:"s3_enabled"`
+	S3Endpoint    *string `db:"s3_endpoint"`
+	S3Region      *string `db:"s3_region"`
+	S3Bucket      *string `db:"s3_bucket"`
+	MediaDelivery *string `db:"media_delivery"`
+}
+
+// maskProxyURL hides the password but keeps the rest of the URL visible so
+// operators can still confirm which upstream proxy is in use.
+func maskProxyURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	p, err := url.Parse(raw)
+	if err != nil || p.User == nil {
+		return raw
+	}
+	if _, hasPass := p.User.Password(); !hasPass {
+		return raw
+	}
+	p.User = url.UserPassword(p.User.Username(), "***")
+	return p.String()
+}
+
 // GetUserByID returns a single user by ID.
 // @Summary Get user by ID
-// @Description Returns a single user by their ID.
+// @Description Returns a single user by their ID. Secrets (auth_token, s3 keys,
+// @Description proxy password) are never returned raw — see UserDetail.
 // @Tags Admin
 // @Produce json
 // @Param userid path string true "User ID"
-// @Success 200 {object} UserResponse
+// @Success 200 {object} UserDetailResponse
+// @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Security AdminAuth
 // @Router /admin/users/{userid} [get]
 func (s *server) GetUserByID() http.HandlerFunc {
+	const userDetailQuery = `SELECT id, name, token, webhook, max_user_id,
+		COALESCE(auth_token, '') as auth_token, COALESCE(device_id, '') as device_id,
+		connected, events, COALESCE(proxy_url, '') as proxy_url,
+		COALESCE(history, 0) as history,
+		COALESCE(s3_enabled, 0) as s3_enabled,
+		COALESCE(s3_endpoint, '') as s3_endpoint,
+		COALESCE(s3_region, '') as s3_region,
+		COALESCE(s3_bucket, '') as s3_bucket,
+		COALESCE(media_delivery, 'base64') as media_delivery
+		FROM users`
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := mux.Vars(r)["userid"]
 		if userID == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("userid is required"))
+			s.respondError(w, r, http.StatusBadRequest, ErrInvalidInput, "userid is required")
 			return
 		}
 
-		var user userRow
-		if err := s.db.Get(&user, userRowQuery+" WHERE id=$1", userID); err != nil {
+		var row userDetailRow
+		if err := s.db.Get(&row, userDetailQuery+" WHERE id=$1", userID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				s.Respond(w, r, http.StatusNotFound, errors.New("user not found"))
+				s.respondError(w, r, http.StatusNotFound, ErrNotFound, "user not found")
 				return
 			}
-			s.Respond(w, r, http.StatusInternalServerError, err)
+			log.Error().Err(err).Str("userID", userID).Msg("Failed to load user")
+			s.respondError(w, r, http.StatusInternalServerError, ErrInternalFailure, "database error")
 			return
 		}
-		user.Authenticated = user.AuthToken != ""
-		s.Respond(w, r, http.StatusOK, user)
+
+		eventList := []string{}
+		for _, e := range strings.Split(row.Events, ",") {
+			if e = strings.TrimSpace(e); e != "" {
+				eventList = append(eventList, e)
+			}
+		}
+
+		proxyRaw := ""
+		if row.ProxyURL != nil {
+			proxyRaw = *row.ProxyURL
+		}
+
+		data := map[string]interface{}{
+			"id":               row.ID,
+			"name":             row.Name,
+			"token":            row.Token,
+			"webhook":          row.Webhook,
+			"max_user_id":      safeInt64(row.MaxUserID),
+			"device_id":        safeString(row.DeviceID),
+			"connected":        clientManager.IsConnected(row.ID),
+			"connected_flag":   row.Connected != 0,
+			"auth_configured":  row.AuthToken != nil && *row.AuthToken != "",
+			"events":           eventList,
+			"proxy_configured": proxyRaw != "",
+			"proxy_url":        maskProxyURL(proxyRaw),
+			"history":          row.History,
+			"s3_enabled":       row.S3Enabled,
+			"s3_endpoint":      safeString(row.S3Endpoint),
+			"s3_region":        safeString(row.S3Region),
+			"s3_bucket":        safeString(row.S3Bucket),
+			"media_delivery":   safeString(row.MediaDelivery),
+		}
+		s.Respond(w, r, http.StatusOK, data)
 	}
 }
 
@@ -2427,4 +2536,47 @@ func decodeMediaData(data string, defaultName string) ([]byte, string, error) {
 		return nil, "", err
 	}
 	return decoded, filename, nil
+}
+
+// GetHealth reports liveness/readiness for monitoring. Returns 200 with
+// `"status":"ok"` when DB pings; 503 with `"status":"degraded"` otherwise.
+// Intentionally unauthenticated so load balancers and orchestrators can probe.
+// @Summary Health check
+// @Description Liveness + readiness snapshot. Returns 200 when DB pings, 503 otherwise.
+// @Tags Health
+// @Produce json
+// @Success 200 {object} HealthResponse
+// @Failure 503 {object} HealthResponse
+// @Router /health [get]
+func (s *server) GetHealth() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+
+		dbOk := s.db.Ping() == nil
+		status := "ok"
+		if !dbOk {
+			status = "degraded"
+		}
+
+		resp := map[string]interface{}{
+			"success":         true,
+			"status":          status,
+			"version":         version,
+			"uptime_seconds":  int64(time.Since(s.startTime).Seconds()),
+			"db_ok":           dbOk,
+			"rabbitmq_ok":     rabbit != nil && rabbit.enabled.Load(),
+			"connected_users": clientManager.CountConnected(),
+			"goroutines":      runtime.NumGoroutine(),
+			"mem_alloc_mb":    mem.Alloc / 1024 / 1024,
+			"timestamp":       time.Now().Unix(),
+		}
+
+		code := http.StatusOK
+		if !dbOk {
+			code = http.StatusServiceUnavailable
+			resp["success"] = false
+		}
+		s.Respond(w, r, code, resp)
+	}
 }

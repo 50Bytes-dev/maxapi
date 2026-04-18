@@ -4,6 +4,7 @@ maxapi
 .env
 .tool-versions
 .memsearch/
+*.db
 
 # Added by Claude Task Master
 # Logs
