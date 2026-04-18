@@ -68,7 +68,6 @@ var (
 	versionFlag   = flag.Bool("version", false, "Display version information and exit")
 
 	clientManager    = NewClientManager()
-	killchannel      = make(map[string](chan bool))
 	userinfocache    = cache.New(5*time.Minute, 10*time.Minute)
 	lastMessageCache = cache.New(24*time.Hour, 24*time.Hour)
 	globalHTTPClient = &http.Client{Timeout: 60 * time.Second}

@@ -10,17 +10,19 @@ import (
 // ClientManager manages MAX API clients
 type ClientManager struct {
 	sync.RWMutex
-	maxClients  map[string]*maxclient.Client
-	httpClients map[string]*resty.Client
-	myClients   map[string]*MyClient
+	maxClients   map[string]*maxclient.Client
+	httpClients  map[string]*resty.Client
+	myClients    map[string]*MyClient
+	killChannels map[string]chan bool
 }
 
 // NewClientManager creates a new client manager
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		maxClients:  make(map[string]*maxclient.Client),
-		httpClients: make(map[string]*resty.Client),
-		myClients:   make(map[string]*MyClient),
+		maxClients:   make(map[string]*maxclient.Client),
+		httpClients:  make(map[string]*resty.Client),
+		myClients:    make(map[string]*MyClient),
+		killChannels: make(map[string]chan bool),
 	}
 }
 
@@ -104,4 +106,47 @@ func (cm *ClientManager) IsConnected(userID string) bool {
 		return client.IsConnected()
 	}
 	return false
+}
+
+// NewKillChannel replaces any existing kill channel for the user with a fresh
+// buffered channel and returns it. Buffered so that a lone sender never blocks
+// when no goroutine is currently selecting on the channel.
+func (cm *ClientManager) NewKillChannel(userID string) chan bool {
+	cm.Lock()
+	defer cm.Unlock()
+	ch := make(chan bool, 1)
+	cm.killChannels[userID] = ch
+	return ch
+}
+
+// GetKillChannel returns the current kill channel for the user (nil if unset).
+func (cm *ClientManager) GetKillChannel(userID string) chan bool {
+	cm.RLock()
+	defer cm.RUnlock()
+	return cm.killChannels[userID]
+}
+
+// DeleteKillChannel removes the kill channel entry for the user.
+func (cm *ClientManager) DeleteKillChannel(userID string) {
+	cm.Lock()
+	defer cm.Unlock()
+	delete(cm.killChannels, userID)
+}
+
+// SendKill delivers a non-blocking kill signal to the user's current loop
+// goroutine. Returns true if the signal was enqueued, false if no channel is
+// registered or the buffer is already full (meaning a kill is already pending).
+func (cm *ClientManager) SendKill(userID string) bool {
+	cm.RLock()
+	ch := cm.killChannels[userID]
+	cm.RUnlock()
+	if ch == nil {
+		return false
+	}
+	select {
+	case ch <- true:
+		return true
+	default:
+		return false
+	}
 }

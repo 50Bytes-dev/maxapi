@@ -194,6 +194,8 @@ func (s *server) startQRSession(userID, token string) (*maxclient.QRStartResult,
 	clientManager.SetMaxClient(userID, client)
 	client.StartPingLoop()
 
+	s.ensureHTTPClient(userID)
+
 	if clientManager.GetMyClient(userID) == nil {
 		clientManager.SetMyClient(userID, &MyClient{
 			userID: userID,
@@ -329,10 +331,12 @@ func (s *server) watchQRSession(userID string, client *maxclient.Client, start *
 					userinfocache.Set(userToken, v, cache.NoExpiration)
 				}
 			}
-			s.finishQRSession(userID, client, maxclient.EventTypeQRAuthorized, map[string]interface{}{
-				"authToken": authToken,
-			})
-			s.autoConnectAfterQR(userID, authToken)
+			// Tear down the temporary auth WebSocket and all per-user state —
+			// completeQRAuth rebuilds it from scratch via initClient, so any
+			// webhook fires only after the full client is live.
+			client.Close()
+			cleanupClient(userID)
+			s.completeQRAuth(userID, authToken)
 			return
 		}
 	}
@@ -345,10 +349,13 @@ func (s *server) tokenForUser(userID string) string {
 	return token
 }
 
-// autoConnectAfterQR starts a full MAX client immediately after a successful QR
-// authorisation. Event subscriptions are loaded from the user's DB row — the
-// value set via POST /admin/users or /session/connect.
-func (s *server) autoConnectAfterQR(userID, authToken string) {
+// completeQRAuth runs the full MAX client bring-up synchronously after a
+// successful QR scan. It blocks until the session WebSocket is connected (or
+// the attempt fails) so that the QRAuthorized webhook only fires when the
+// client is actually ready — no dead window between "scanned" and "usable".
+// Event subscriptions are read from the user's DB row, the same source
+// /session/connect uses.
+func (s *server) completeQRAuth(userID, authToken string) {
 	if clientManager.IsConnected(userID) {
 		return
 	}
@@ -359,7 +366,7 @@ func (s *server) autoConnectAfterQR(userID, authToken string) {
 		Events   string `db:"events"`
 	}
 	if err := s.db.Get(&row, "SELECT token, COALESCE(device_id,'') AS device_id, COALESCE(events,'') AS events FROM users WHERE id=$1", userID); err != nil {
-		log.Error().Err(err).Str("userID", userID).Msg("autoConnectAfterQR: failed to load user")
+		log.Error().Err(err).Str("userID", userID).Msg("completeQRAuth: failed to load user")
 		return
 	}
 
@@ -371,19 +378,36 @@ func (s *server) autoConnectAfterQR(userID, authToken string) {
 		}
 	}
 
-	if ch := killchannel[userID]; ch != nil {
-		select {
-		case ch <- true:
-		default:
-		}
-	}
-	killchannel[userID] = make(chan bool)
+	// Retire any lingering loop goroutine and install a fresh kill channel
+	// before initClient, so runClientLoop's first GetKillChannel picks ours up.
+	clientManager.SendKill(userID)
+	clientManager.NewKillChannel(userID)
 
 	log.Info().Str("userID", userID).Msg("Auto-connecting to MAX after QR authorisation")
-	go s.startClient(userID, authToken, row.DeviceID, row.Token, subscribedEvents)
+	client, mycli, syncData, err := s.initClient(userID, authToken, row.DeviceID, row.Token, subscribedEvents)
+	if err != nil {
+		// initClient has already fired AuthExpired (if applicable) and cleaned
+		// state. Nothing else to announce here — the authToken is persisted,
+		// so callers can retry via POST /session/connect if desired.
+		return
+	}
+
+	// Now that the session WebSocket is live, fire QRAuthorized (so consumers
+	// know auth succeeded) immediately followed by Sync (so consumers have
+	// maxUserID and any server-provided profile data in hand).
+	sendEventWithWebHook(mycli, map[string]interface{}{
+		"type":      maxclient.EventTypeQRAuthorized,
+		"authToken": authToken,
+	}, "")
+	sendEventWithWebHook(mycli, buildSyncPostmap(false, client.MaxUserID, syncData), "")
+
+	go s.runClientLoop(userID, authToken, client, mycli)
 }
 
-// finishQRSession closes the temporary auth client and fires the terminal webhook event.
+// finishQRSession closes the temporary auth client, fires a terminal failure
+// event (QRExpired or QR confirm error), and purges the per-user state that
+// the QR flow created. Only used for aborted paths — a successful scan hands
+// off to completeQRAuth, which keeps and re-uses the clients it needs.
 func (s *server) finishQRSession(txtid string, client *maxclient.Client, eventType string, extra map[string]interface{}) {
 	if client != nil {
 		client.Close()
@@ -397,6 +421,11 @@ func (s *server) finishQRSession(txtid string, client *maxclient.Client, eventTy
 		}
 		sendEventWithWebHook(mycli, payload, "")
 	}
+
+	// QR path created a MyClient and HTTPClient purely for webhook dispatch.
+	// The session is over — drop them so a fresh retry starts from a clean slate.
+	clientManager.DeleteMyClient(txtid)
+	clientManager.DeleteHTTPClient(txtid)
 }
 
 // ========== SESSION ENDPOINTS ==========
@@ -482,7 +511,7 @@ func (s *server) Connect() http.HandlerFunc {
 		}
 
 		log.Info().Str("userID", txtid).Msg("Connecting to MAX")
-		killchannel[txtid] = make(chan bool)
+		clientManager.NewKillChannel(txtid)
 		go s.startClient(txtid, authToken, deviceID, token, subscribedEvents)
 
 		if !t.Immediate {
@@ -558,14 +587,9 @@ func (s *server) Disconnect() http.HandlerFunc {
 			s.clearQRState(txtid)
 		}
 
-		if ch := killchannel[txtid]; ch != nil {
-			select {
-			case ch <- true:
-				// Signal sent successfully
-			default:
-				// Channel not ready, clean up anyway
-				delete(killchannel, txtid)
-			}
+		if !clientManager.SendKill(txtid) {
+			// No live loop goroutine to signal; drop any stale channel entry.
+			clientManager.DeleteKillChannel(txtid)
 		}
 
 		_, err := s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", txtid)
@@ -677,12 +701,7 @@ func (s *server) RequestSync() http.HandlerFunc {
 		}
 
 		// Stop existing client goroutine and disconnect
-		if ch := killchannel[txtid]; ch != nil {
-			select {
-			case ch <- true:
-			default:
-			}
-		}
+		clientManager.SendKill(txtid)
 		oldClient := clientManager.GetMaxClient(txtid)
 		if oldClient != nil {
 			oldClient.Disconnect()
@@ -732,7 +751,7 @@ func (s *server) RequestSync() http.HandlerFunc {
 		}
 
 		// Create new kill channel and start background goroutine for reconnects
-		killchannel[txtid] = make(chan bool)
+		clientManager.NewKillChannel(txtid)
 		go s.maintainConnection(txtid, authToken, deviceID, token, mycli)
 
 		// Build response with raw sync data
@@ -2354,14 +2373,8 @@ func (s *server) DeleteUser() http.HandlerFunc {
 		userID := vars["userid"]
 
 		// Disconnect if connected (non-blocking send)
-		if ch := killchannel[userID]; ch != nil {
-			select {
-			case ch <- true:
-				// Signal sent successfully
-			default:
-				// Channel not ready, clean up anyway
-				delete(killchannel, userID)
-			}
+		if !clientManager.SendKill(userID) {
+			clientManager.DeleteKillChannel(userID)
 		}
 
 		_, err := s.db.Exec("DELETE FROM users WHERE id=$1", userID)

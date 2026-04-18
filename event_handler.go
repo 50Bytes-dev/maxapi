@@ -250,7 +250,7 @@ func (s *server) connectOnStartup() {
 		eventstring := strings.Join(subscribedEvents, ",")
 		log.Info().Str("events", eventstring).Int64("maxUserID", safeInt64(maxUserID)).Msg("Attempt to connect")
 
-		killchannel[txtid] = make(chan bool)
+		clientManager.NewKillChannel(txtid)
 		go s.startClient(txtid, *authToken, safeString(deviceID), token, subscribedEvents)
 
 		// Initialize S3 client if configured
@@ -306,43 +306,15 @@ func (s *server) connectOnStartup() {
 	}
 }
 
-// startClient starts a MAX client for a user
-func (s *server) startClient(userID string, authToken string, deviceID string, token string, subscriptions []string) {
-	log.Info().Str("userid", userID).Msg("Starting WebSocket connection to MAX")
-
-	// Create or use existing device ID
-	if deviceID == "" {
-		deviceID = uuid.New().String()
-		// Save device ID to database
-		_, err := s.db.Exec("UPDATE users SET device_id=$1 WHERE id=$2", deviceID, userID)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to save device ID")
-		}
+// ensureHTTPClient registers a resty HTTP client for the user if one is not
+// already registered. Idempotent so every session path (QR auth, reconnect on
+// startup, /session/connect) can call it before the first webhook fires —
+// mirrors wuzapi, where HTTPClient is set up before the QR loop emits events.
+func (s *server) ensureHTTPClient(userID string) {
+	if clientManager.GetHTTPClient(userID) != nil {
+		return
 	}
 
-	// Create MAX client
-	logger := log.With().Str("userID", userID).Logger()
-	client := maxclient.NewClient(deviceID, logger)
-
-	clientManager.SetMaxClient(userID, client)
-
-	// Create MyClient wrapper
-	mycli := &MyClient{
-		MaxClient:     client,
-		userID:        userID,
-		token:         token,
-		subscriptions: subscriptions,
-		db:            s.db,
-		s:             s,
-	}
-	clientManager.SetMyClient(userID, mycli)
-
-	// Set up event handler
-	client.SetEventHandler(func(event maxclient.Event) {
-		mycli.handleEvent(event)
-	})
-
-	// Create HTTP client
 	httpClient := resty.New()
 	httpClient.SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
 	httpClient.SetTimeout(30 * time.Second)
@@ -354,69 +326,117 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 		}
 	})
 
-	// Set proxy if defined
 	var proxyURL string
-	err := s.db.Get(&proxyURL, "SELECT proxy_url FROM users WHERE id=$1", userID)
-	if err == nil && proxyURL != "" {
+	if err := s.db.Get(&proxyURL, "SELECT proxy_url FROM users WHERE id=$1", userID); err == nil && proxyURL != "" {
 		httpClient.SetProxy(proxyURL)
 	}
+
 	clientManager.SetHTTPClient(userID, httpClient)
+}
 
-	// Connect and login
-	syncData, err := client.ConnectAndLogin(authToken, nil)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to connect to MAX")
-
-		// Check if auth error (token expired/invalid)
-		if maxclient.IsAuthError(err) {
-			log.Warn().Str("userID", userID).Msg("Auth token expired or invalid, clearing auth and notifying")
-			// Clear auth token in DB
-			_, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID)
-			if dbErr != nil {
-				log.Error().Err(dbErr).Msg("Failed to clear auth token")
-			}
-			// Send AuthExpired webhook
-			postmap := map[string]interface{}{
-				"type":   "AuthExpired",
-				"reason": err.Error(),
-			}
-			sendEventWithWebHook(mycli, postmap, "")
-		}
-
-		cleanupClient(userID)
-		return
-	}
-
-	// Update connected status
-	_, err = s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to update connected status")
-	}
-
-	// Send Sync event with raw data from MAX server
+// buildSyncPostmap assembles the Sync webhook payload, preserving all raw keys
+// returned by the MAX server while keeping our own "type"/"reconnect"/"maxUserID"
+// fields authoritative.
+func buildSyncPostmap(reconnect bool, maxUserID int64, syncData map[string]interface{}) map[string]interface{} {
 	postmap := map[string]interface{}{
 		"type":      "Sync",
-		"reconnect": false,
-		"maxUserID": client.MaxUserID,
+		"reconnect": reconnect,
+		"maxUserID": maxUserID,
 	}
-	// Merge raw sync data into postmap (preserves all fields from MAX server)
 	for key, value := range syncData {
-		if key != "type" { // Don't override type
+		if key != "type" && key != "reconnect" && key != "maxUserID" {
 			postmap[key] = value
 		}
 	}
-	sendEventWithWebHook(mycli, postmap, "")
+	return postmap
+}
+
+// initClient performs the one-shot connect+login and registers a fresh
+// MaxClient / MyClient / HTTPClient for the user. On success it returns the
+// live objects and the raw syncData from the server. On failure it performs
+// all cleanup itself (AuthExpired webhook, DB reset, manager purge) and
+// returns the original error so the caller can distinguish success without
+// having to repeat that bookkeeping.
+func (s *server) initClient(userID, authToken, deviceID, token string, subscriptions []string) (*maxclient.Client, *MyClient, map[string]interface{}, error) {
+	log.Info().Str("userid", userID).Msg("Starting WebSocket connection to MAX")
+
+	if deviceID == "" {
+		deviceID = uuid.New().String()
+		if _, err := s.db.Exec("UPDATE users SET device_id=$1 WHERE id=$2", deviceID, userID); err != nil {
+			log.Error().Err(err).Msg("Failed to save device ID")
+		}
+	}
+
+	logger := log.With().Str("userID", userID).Logger()
+	client := maxclient.NewClient(deviceID, logger)
+	clientManager.SetMaxClient(userID, client)
+
+	mycli := &MyClient{
+		MaxClient:     client,
+		userID:        userID,
+		token:         token,
+		subscriptions: subscriptions,
+		db:            s.db,
+		s:             s,
+	}
+	clientManager.SetMyClient(userID, mycli)
+
+	client.SetEventHandler(func(event maxclient.Event) {
+		mycli.handleEvent(event)
+	})
+
+	s.ensureHTTPClient(userID)
+
+	syncData, err := client.ConnectAndLogin(authToken, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to connect to MAX")
+		if maxclient.IsAuthError(err) {
+			log.Warn().Str("userID", userID).Msg("Auth token expired or invalid, clearing auth and notifying")
+			if _, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID); dbErr != nil {
+				log.Error().Err(dbErr).Msg("Failed to clear auth token")
+			}
+			sendEventWithWebHook(mycli, map[string]interface{}{
+				"type":   "AuthExpired",
+				"reason": err.Error(),
+			}, "")
+		}
+		cleanupClient(userID)
+		return nil, nil, nil, err
+	}
+
+	if _, err := s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID); err != nil {
+		log.Error().Err(err).Msg("Failed to update connected status")
+	}
 
 	log.Info().Int64("maxUserID", client.MaxUserID).Msg("Connected to MAX")
+	return client, mycli, syncData, nil
+}
 
-	// Keep connection alive with auto-reconnect
+// startClient is the goroutine entry point for /session/connect when a stored
+// auth_token is already available. It runs initClient, fires the initial Sync
+// webhook, then enters the supervised reconnect loop.
+func (s *server) startClient(userID string, authToken string, deviceID string, token string, subscriptions []string) {
+	client, mycli, syncData, err := s.initClient(userID, authToken, deviceID, token, subscriptions)
+	if err != nil {
+		return
+	}
+
+	sendEventWithWebHook(mycli, buildSyncPostmap(false, client.MaxUserID, syncData), "")
+	s.runClientLoop(userID, authToken, client, mycli)
+}
+
+// runClientLoop supervises the connected client: detects drops, backs off and
+// reconnects, and exits on a kill signal or when the client is replaced by a
+// newer startClient invocation. Intended to run in its own goroutine.
+func (s *server) runClientLoop(userID string, authToken string, client *maxclient.Client, mycli *MyClient) {
 	reconnectAttempts := 0
 	maxReconnectAttempts := 120
 	reconnectDelay := 5 * time.Second
 
+	killCh := clientManager.GetKillChannel(userID)
 	for {
 		select {
-		case <-killchannel[userID]:
+		case <-killCh:
 			log.Info().Str("userid", userID).Msg("Received kill signal")
 			client.Disconnect()
 			cleanupClient(userID)
@@ -513,19 +533,7 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 					log.Error().Err(err).Msg("Failed to update connected status")
 				}
 
-				// Send Sync event with raw data from MAX server
-				postmap := map[string]interface{}{
-					"type":      "Sync",
-					"reconnect": true,
-					"maxUserID": client.MaxUserID,
-				}
-				// Merge raw sync data into postmap (preserves all fields from MAX server)
-				for key, value := range syncData {
-					if key != "type" { // Don't override type
-						postmap[key] = value
-					}
-				}
-				sendEventWithWebHook(mycli, postmap, "")
+				sendEventWithWebHook(mycli, buildSyncPostmap(true, client.MaxUserID, syncData), "")
 			} else {
 				// Reset reconnect counter on successful connection
 				reconnectAttempts = 0
@@ -547,9 +555,10 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 	maxReconnectAttempts := 120
 	reconnectDelay := 5 * time.Second
 
+	killCh := clientManager.GetKillChannel(userID)
 	for {
 		select {
-		case <-killchannel[userID]:
+		case <-killCh:
 			log.Info().Str("userid", userID).Msg("Received kill signal (maintainConnection)")
 			client.Disconnect()
 			cleanupClient(userID)
@@ -651,7 +660,7 @@ func cleanupClient(userID string) {
 	clientManager.DeleteMaxClient(userID)
 	clientManager.DeleteMyClient(userID)
 	clientManager.DeleteHTTPClient(userID)
-	delete(killchannel, userID)
+	clientManager.DeleteKillChannel(userID)
 }
 
 // safeDeleteUser deletes a user safely, idempotent for repeated calls
@@ -691,13 +700,8 @@ func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
 	// 4. Cleanup clients (idempotent)
 	cleanupClient(userID)
 
-	// 5. Non-blocking signal to killchannel
-	if ch := killchannel[userID]; ch != nil {
-		select {
-		case ch <- true:
-		default:
-		}
-	}
+	// 5. Non-blocking signal to any running loop goroutine
+	clientManager.SendKill(userID)
 }
 
 // handleEvent handles MAX events and sends webhooks
