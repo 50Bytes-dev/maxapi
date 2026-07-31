@@ -23,6 +23,13 @@ const (
 	// Protocol version for WebSocket
 	ProtocolVersion = 11
 
+	// MaxSeq is the largest sequence number MAX accepts. The server parses
+	// `seq` as a signed 16-bit integer: anything above 32767 makes it drop the
+	// connection right after the frame, with no close code (client sees
+	// "close 1006 unexpected EOF"). Once a long-lived client crossed 32767 it
+	// could never reconnect again, so the counter wraps back to 1 instead.
+	MaxSeq = 32767
+
 	// Default timeouts
 	DefaultTimeout    = 30 * time.Second
 	PingInterval      = 30 * time.Second
@@ -158,6 +165,11 @@ func (c *Client) Connect() error {
 	c.conn = conn
 	c.setConnected(true)
 
+	// Every connection is a fresh sequence, the same way the web client does
+	// it. Carrying the counter over from the previous socket is what used to
+	// push a reconnecting client past MaxSeq and lock it out for good.
+	atomic.StoreInt32(&c.seq, 0)
+
 	// Start receive loop
 	c.wg.Add(1)
 	go c.receiveLoop()
@@ -202,9 +214,20 @@ func (c *Client) Disconnect() error {
 	return c.Close()
 }
 
-// nextSeq returns the next sequence number
+// nextSeq returns the next sequence number, wrapping back to 1 once MaxSeq is
+// reached. A connection that stays up long enough (one frame every 30s ping
+// takes ~11 days) would otherwise walk past what MAX can parse.
 func (c *Client) nextSeq() int {
-	return int(atomic.AddInt32(&c.seq, 1))
+	for {
+		cur := atomic.LoadInt32(&c.seq)
+		next := cur + 1
+		if next > MaxSeq {
+			next = 1
+		}
+		if atomic.CompareAndSwapInt32(&c.seq, cur, next) {
+			return int(next)
+		}
+	}
 }
 
 // sendAndWait sends a message and waits for response
