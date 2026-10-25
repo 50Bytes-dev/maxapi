@@ -790,16 +790,27 @@ func (s *server) RequestSync() http.HandlerFunc {
 
 // ========== MESSAGE ENDPOINTS ==========
 
+// Bounds for the waits inside POST /chat/send/text. A send by phone runs both
+// in sequence, so the endpoint answers within ~9 s: before a caller with a
+// 10 s read timeout gives up and loses the outcome code.
+const (
+	sendTextLookupTimeout = 4 * time.Second
+	sendTextReplyTimeout  = 5 * time.Second
+)
+
 // SendMessage sends a text message
 // @Summary Send text message
-// @Description Sends a text message to a chat
+// @Description Sends a text message to a chat. Errors carry a delivery outcome code, see API.md
 // @Tags Chat
 // @Accept json
 // @Produce json
 // @Param request body MessageBody true "Message data"
 // @Success 200 {object} SendMessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse "Not connected"
+// @Failure 400 {object} ErrorResponse "invalid_target or INVALID_INPUT"
+// @Failure 404 {object} ErrorResponse "address_not_found"
+// @Failure 422 {object} ErrorResponse "send_rejected"
+// @Failure 500 {object} ErrorResponse "send_failed"
+// @Failure 503 {object} ErrorResponse "not_connected or lookup_failed"
 // @Security ApiKeyAuth
 // @Router /chat/send/text [post]
 func (s *server) SendMessage() http.HandlerFunc {
@@ -808,25 +819,35 @@ func (s *server) SendMessage() http.HandlerFunc {
 
 		client := clientManager.GetMaxClient(txtid)
 		if client == nil || !client.IsConnected() {
-			s.Respond(w, r, http.StatusServiceUnavailable, errors.New("not connected"))
+			s.respondError(w, r, http.StatusServiceUnavailable, CodeNotConnected, "not connected")
 			return
 		}
 
 		decoder := json.NewDecoder(r.Body)
 		var msg MessageBody
 		if err := decoder.Decode(&msg); err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
+			s.respondError(w, r, http.StatusBadRequest, ErrInvalidInput, "could not decode payload")
 			return
 		}
 
-		// Get chat ID (chatId=0 is valid for "Favorites/Saved Messages")
+		// chatId 0 is the account's own "Favorites" chat, so a request without
+		// a recipient must not fall through to it.
+		if msg.ChatID == 0 && msg.Phone == "" {
+			s.respondError(w, r, http.StatusBadRequest, CodeInvalidTarget, "chatId or phone is required")
+			return
+		}
+
 		chatID := msg.ChatID
 
 		// If phone provided and no explicit chatId, search by phone
-		if msg.Phone != "" && chatID == 0 {
-			user, err := client.SearchByPhone(msg.Phone)
+		if chatID == 0 {
+			user, err := client.SearchByPhoneWithTimeout(msg.Phone, sendTextLookupTimeout)
 			if err != nil {
-				s.Respond(w, r, http.StatusBadRequest, fmt.Errorf("user not found: %v", err))
+				if errors.Is(err, maxclient.ErrInvalidPhone) || errors.Is(err, maxclient.ErrUserNotFound) {
+					s.respondSendError(w, r, http.StatusNotFound, CodeAddressNotFound, fmt.Sprintf("user not found: %v", err), err)
+				} else {
+					s.respondSendError(w, r, http.StatusServiceUnavailable, CodeLookupFailed, fmt.Sprintf("user lookup failed: %v", err), err)
+				}
 				return
 			}
 			chatID = maxclient.GetDialogID(client.MaxUserID, user.ID)
@@ -837,10 +858,19 @@ func (s *server) SendMessage() http.HandlerFunc {
 			Text:    msg.Text,
 			ReplyTo: msg.ReplyTo,
 			Notify:  msg.Notify,
+			Timeout: sendTextReplyTimeout,
 		})
 
 		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("send failed: %v", err))
+			// Only an error MAX answered with proves the message was not
+			// created. Anything else — no answer in time, or the session lost
+			// once the frame was out (also reported as ErrNotConnected) —
+			// leaves the outcome unknown.
+			if _, rejected := maxclient.ServerErrorCode(err); rejected {
+				s.respondSendError(w, r, http.StatusUnprocessableEntity, CodeSendRejected, fmt.Sprintf("send rejected: %v", err), err)
+			} else {
+				s.respondSendError(w, r, http.StatusInternalServerError, CodeSendFailed, fmt.Sprintf("send failed: %v", err), err)
+			}
 			return
 		}
 
@@ -1442,7 +1472,7 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 
 // CheckUser checks if a phone number exists in MAX
 // @Summary Check user existence
-// @Description Checks if phone numbers exist in MAX
+// @Description Checks if phone numbers exist in MAX. A number whose lookup failed gets exists:false plus an error
 // @Tags User
 // @Accept json
 // @Produce json
@@ -1478,12 +1508,18 @@ func (s *server) CheckUser() http.HandlerFunc {
 				"exists":    false,
 				"maxUserId": int64(0),
 			}
-			if err == nil && user != nil {
+			switch {
+			case err == nil:
 				result["exists"] = true
 				result["maxUserId"] = user.ID
 				if len(user.Names) > 0 {
 					result["name"] = user.Names[0].Name
 				}
+			case errors.Is(err, maxclient.ErrUserNotFound):
+				// MAX answered and knows no such user.
+			default:
+				// The lookup itself failed: "no such user" is not known.
+				result["error"] = err.Error()
 			}
 			results = append(results, result)
 		}

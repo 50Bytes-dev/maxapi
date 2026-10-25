@@ -1263,7 +1263,8 @@ paths:
       - Chat
   /chat/send/text:
     post:
-      description: Sends a text message to a chat
+      description: Sends a text message to a chat. Errors carry a delivery outcome
+        code, see API.md
       requestBody:
         content:
           application/json:
@@ -1283,13 +1284,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
+          description: invalid_target or INVALID_INPUT
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: address_not_found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: send_rejected
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: send_failed
         "503":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Not connected
+          description: not_connected or lookup_failed
       security:
       - ApiKeyAuth: []
       summary: Send text message
@@ -1766,7 +1785,8 @@ paths:
       - Session
   /user/check:
     post:
-      description: Checks if phone numbers exist in MAX
+      description: Checks if phone numbers exist in MAX. A number whose lookup failed
+        gets exists:false plus an error
       requestBody:
         content:
           application/json:

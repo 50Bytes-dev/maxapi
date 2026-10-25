@@ -13,6 +13,10 @@ type SendMessageOptions struct {
 	ReplyTo     int64
 	Attachments []Attachment
 	Elements    []Element
+
+	// Timeout bounds the wait for MAX to acknowledge the message; zero means
+	// DefaultTimeout.
+	Timeout time.Duration
 }
 
 // SendMessage sends a text message to a chat
@@ -46,7 +50,12 @@ func (c *Client) SendMessage(opts SendMessageOptions) (*Message, error) {
 
 	c.Logger.Info().Int64("chatId", opts.ChatID).Msg("Sending message")
 
-	resp, err := c.sendAndWait(OpMsgSend, payload)
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+
+	resp, err := c.sendAndWaitWithTimeout(OpMsgSend, payload, timeout)
 	if err != nil {
 		return nil, err
 	}

@@ -123,6 +123,45 @@ Response:
 }
 ```
 
+One of `chatId` or `phone` is required. When both are set, `chatId` wins.
+`chatId: 0` is not a recipient: a request without one is rejected with
+`invalid_target` instead of landing in the account's own "Favorites" chat.
+
+The endpoint answers within ~9 s: the phone lookup waits at most 4 s for MAX,
+the send at most 5 s for MAX to acknowledge it. A caller with a 10 s read
+timeout therefore always gets an outcome code.
+
+Errors use the [error envelope](#error-responses) with a delivery outcome
+`code` that says whether the text may have reached the recipient:
+
+| HTTP | `code` | Meaning | Sent? |
+|------|--------|---------|-------|
+| `503` | `not_connected` | No live MAX session for this user | No |
+| `400` | `invalid_target` | Neither `chatId` nor `phone` given | No |
+| `400` | `INVALID_INPUT` | Body is not valid JSON | No |
+| `404` | `address_not_found` | `phone` is malformed or MAX has no user with it | No |
+| `503` | `lookup_failed` | Phone lookup timed out, the connection failed, or MAX answered it with an error | No |
+| `422` | `send_rejected` | MAX answered the send with an error | No |
+| `500` | `send_failed` | No answer to the send in time, or the session was lost after the frame went out | Unknown — do not resend automatically |
+
+When MAX itself answered with an error (`send_rejected`, and `lookup_failed`
+caused by a MAX error), the body also carries MAX's code as `upstreamCode`:
+
+```json
+{
+    "success": false,
+    "error": "send rejected: Slow down: Too many requests (too.many.requests)",
+    "code": "send_rejected",
+    "upstreamCode": "too.many.requests"
+}
+```
+
+The codes are lowercase because they follow a delivery contract shared with
+other gateways. That contract also reserves `address_refused` (`403`, the
+recipient's privacy settings or a block). MAX's error code for that case is not
+known, so maxapi does not emit it yet; such refusals arrive as `send_rejected`
+or `lookup_failed` with MAX's code in `upstreamCode`.
+
 ### Send Image
 
 ```http
@@ -341,10 +380,20 @@ Response:
             "exists": true,
             "maxUserId": 123456789,
             "name": "John Doe"
+        },
+        {
+            "phone": "+79007654321",
+            "exists": false,
+            "maxUserId": 0,
+            "error": "Timeout Error: Request timed out (timeout)"
         }
     ]
 }
 ```
+
+`exists: false` without `error` means MAX answered and has no such user. With
+`error` the lookup itself failed (malformed number, timeout, connection or MAX
+error), so whether the user exists is unknown.
 
 ### Get User Info
 
@@ -738,7 +787,9 @@ All error responses follow this format:
 ```
 
 `code` is a stable machine-readable constant that clients can branch on; the
-`error` text is free-form and may evolve. Known codes:
+`error` text is free-form and may evolve. `POST /chat/send/text` uses its own
+lowercase delivery outcome codes, see [Send Text Message](#send-text-message).
+Other known codes:
 
 | Code | Meaning |
 |------|---------|

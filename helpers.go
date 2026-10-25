@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"maxapi/maxclient"
+
 	"github.com/go-resty/resty/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -174,6 +176,21 @@ func (s *server) respondError(w http.ResponseWriter, r *http.Request, status int
 		"error":   msg,
 		"code":    code,
 	})
+}
+
+// respondSendError is respondError for the delivery outcome codes. When err
+// carries an error code MAX itself answered with, the body also gets it as
+// upstreamCode.
+func (s *server) respondSendError(w http.ResponseWriter, r *http.Request, status int, code, msg string, err error) {
+	body := map[string]interface{}{
+		"success": false,
+		"error":   msg,
+		"code":    code,
+	}
+	if upstream, ok := maxclient.ServerErrorCode(err); ok {
+		body["upstreamCode"] = upstream
+	}
+	s.Respond(w, r, status, body)
 }
 
 // Respond sends a JSON response

@@ -43,6 +43,10 @@ const (
 
 // Client represents a MAX API client
 type Client struct {
+	// URI is the WebSocket endpoint to dial; empty means WebSocketURI.
+	// Tests point it at a local fake server.
+	URI string
+
 	// Connection
 	conn   *websocket.Conn
 	connMu sync.RWMutex
@@ -146,7 +150,12 @@ func (c *Client) Connect() error {
 	default:
 	}
 
-	c.Logger.Info().Str("uri", WebSocketURI).Msg("Connecting to MAX WebSocket")
+	uri := c.URI
+	if uri == "" {
+		uri = WebSocketURI
+	}
+
+	c.Logger.Info().Str("uri", uri).Msg("Connecting to MAX WebSocket")
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: DefaultTimeout,
@@ -156,7 +165,7 @@ func (c *Client) Connect() error {
 	header.Set("Origin", WebSocketOrigin)
 	header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
 
-	conn, _, err := dialer.Dial(WebSocketURI, header)
+	conn, _, err := dialer.Dial(uri, header)
 	if err != nil {
 		c.Logger.Error().Err(err).Msg("Failed to connect to WebSocket")
 		return err

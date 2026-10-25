@@ -3,6 +3,7 @@ package maxclient
 import (
 	"encoding/json"
 	"regexp"
+	"time"
 )
 
 var phoneRegex = regexp.MustCompile(`^\+?\d{10,15}$`)
@@ -17,7 +18,7 @@ func (c *Client) GetUsers(userIDs []int64) ([]User, error) {
 	// First check cache
 	var cachedUsers []User
 	var missingIDs []int64
-	
+
 	c.usersMu.RLock()
 	for _, id := range userIDs {
 		if user, ok := c.users[id]; ok {
@@ -27,32 +28,32 @@ func (c *Client) GetUsers(userIDs []int64) ([]User, error) {
 		}
 	}
 	c.usersMu.RUnlock()
-	
+
 	if len(missingIDs) == 0 {
 		return cachedUsers, nil
 	}
-	
+
 	// Fetch missing users
 	payload := map[string]interface{}{
 		"contactIds": missingIDs,
 	}
-	
+
 	c.Logger.Info().Ints64("userIds", missingIDs).Msg("Fetching users")
-	
+
 	resp, err := c.sendAndWait(OpContactInfo, payload)
 	if err != nil {
 		return cachedUsers, err
 	}
-	
+
 	var fetchedUsers []User
-	
+
 	if contactsRaw, ok := resp.Payload["contacts"].([]interface{}); ok {
 		for _, contactRaw := range contactsRaw {
 			contactMap, ok := contactRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			contactBytes, _ := json.Marshal(contactMap)
 			var user User
 			if err := json.Unmarshal(contactBytes, &user); err == nil {
@@ -61,7 +62,7 @@ func (c *Client) GetUsers(userIDs []int64) ([]User, error) {
 			}
 		}
 	}
-	
+
 	// Combine cached and fetched users in original order
 	result := make([]User, 0, len(userIDs))
 	for _, id := range userIDs {
@@ -78,7 +79,7 @@ func (c *Client) GetUsers(userIDs []int64) ([]User, error) {
 			}
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -88,36 +89,41 @@ func (c *Client) GetUser(userID int64) (*User, error) {
 	if user := c.GetCachedUser(userID); user != nil {
 		return user, nil
 	}
-	
+
 	users, err := c.GetUsers([]int64{userID})
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(users) == 0 {
 		return nil, ErrUserNotFound
 	}
-	
+
 	return &users[0], nil
 }
 
 // SearchByPhone searches for a user by phone number
 func (c *Client) SearchByPhone(phone string) (*User, error) {
+	return c.SearchByPhoneWithTimeout(phone, DefaultTimeout)
+}
+
+// SearchByPhoneWithTimeout is SearchByPhone with a custom wait for MAX's answer
+func (c *Client) SearchByPhoneWithTimeout(phone string, timeout time.Duration) (*User, error) {
 	if !ValidatePhone(phone) {
 		return nil, ErrInvalidPhone
 	}
-	
+
 	payload := map[string]interface{}{
 		"phone": phone,
 	}
-	
+
 	c.Logger.Info().Str("phone", phone).Msg("Searching user by phone")
-	
-	resp, err := c.sendAndWait(OpContactInfoByPhone, payload)
+
+	resp, err := c.sendAndWaitWithTimeout(OpContactInfoByPhone, payload, timeout)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if contactRaw, ok := resp.Payload["contact"].(map[string]interface{}); ok {
 		contactBytes, _ := json.Marshal(contactRaw)
 		var user User
@@ -126,7 +132,7 @@ func (c *Client) SearchByPhone(phone string) (*User, error) {
 			return &user, nil
 		}
 	}
-	
+
 	return nil, ErrUserNotFound
 }
 
@@ -136,14 +142,14 @@ func (c *Client) AddContact(contactID int64) (*Contact, error) {
 		"contactId": contactID,
 		"action":    string(ContactActionAdd),
 	}
-	
+
 	c.Logger.Info().Int64("contactId", contactID).Msg("Adding contact")
-	
+
 	resp, err := c.sendAndWait(OpContactUpdate, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if contactRaw, ok := resp.Payload["contact"].(map[string]interface{}); ok {
 		contactBytes, _ := json.Marshal(contactRaw)
 		var contact Contact
@@ -151,7 +157,7 @@ func (c *Client) AddContact(contactID int64) (*Contact, error) {
 			return &contact, nil
 		}
 	}
-	
+
 	return nil, nil
 }
 
@@ -161,9 +167,9 @@ func (c *Client) RemoveContact(contactID int64) error {
 		"contactId": contactID,
 		"action":    string(ContactActionRemove),
 	}
-	
+
 	c.Logger.Info().Int64("contactId", contactID).Msg("Removing contact")
-	
+
 	_, err := c.sendAndWait(OpContactUpdate, payload)
 	return err
 }
@@ -173,14 +179,14 @@ func (c *Client) GetPresence(userID int64) (*Presence, error) {
 	payload := map[string]interface{}{
 		"contactId": userID,
 	}
-	
+
 	c.Logger.Debug().Int64("userId", userID).Msg("Getting presence")
-	
+
 	resp, err := c.sendAndWait(OpContactPresence, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if presenceRaw, ok := resp.Payload["presence"].(map[string]interface{}); ok {
 		presenceBytes, _ := json.Marshal(presenceRaw)
 		var presence Presence
@@ -188,28 +194,28 @@ func (c *Client) GetPresence(userID int64) (*Presence, error) {
 			return &presence, nil
 		}
 	}
-	
+
 	return nil, nil
 }
 
 // GetSessions gets active sessions for the current user
 func (c *Client) GetSessions() ([]Session, error) {
 	c.Logger.Info().Msg("Getting sessions")
-	
+
 	resp, err := c.sendAndWait(OpSessionsInfo, map[string]interface{}{})
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var sessions []Session
-	
+
 	if sessionsRaw, ok := resp.Payload["sessions"].([]interface{}); ok {
 		for _, sessionRaw := range sessionsRaw {
 			sessionMap, ok := sessionRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			sessionBytes, _ := json.Marshal(sessionMap)
 			var session Session
 			if err := json.Unmarshal(sessionBytes, &session); err == nil {
@@ -217,7 +223,7 @@ func (c *Client) GetSessions() ([]Session, error) {
 			}
 		}
 	}
-	
+
 	return sessions, nil
 }
 
@@ -226,16 +232,16 @@ func (c *Client) UpdateProfile(firstName string, lastName string, description st
 	payload := map[string]interface{}{
 		"firstName": firstName,
 	}
-	
+
 	if lastName != "" {
 		payload["lastName"] = lastName
 	}
 	if description != "" {
 		payload["description"] = description
 	}
-	
+
 	c.Logger.Info().Str("firstName", firstName).Msg("Updating profile")
-	
+
 	_, err := c.sendAndWait(OpProfile, payload)
 	return err
 }
@@ -243,21 +249,21 @@ func (c *Client) UpdateProfile(firstName string, lastName string, description st
 // GetContacts gets the contact list
 func (c *Client) GetContacts() ([]Contact, error) {
 	c.Logger.Info().Msg("Getting contacts")
-	
+
 	resp, err := c.sendAndWait(OpContactList, map[string]interface{}{})
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var contacts []Contact
-	
+
 	if contactsRaw, ok := resp.Payload["contacts"].([]interface{}); ok {
 		for _, contactRaw := range contactsRaw {
 			contactMap, ok := contactRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			contactBytes, _ := json.Marshal(contactMap)
 			var contact Contact
 			if err := json.Unmarshal(contactBytes, &contact); err == nil {
@@ -265,7 +271,7 @@ func (c *Client) GetContacts() ([]Contact, error) {
 			}
 		}
 	}
-	
+
 	return contacts, nil
 }
 
@@ -274,23 +280,23 @@ func (c *Client) SearchContacts(query string) ([]Contact, error) {
 	payload := map[string]interface{}{
 		"query": query,
 	}
-	
+
 	c.Logger.Info().Str("query", query).Msg("Searching contacts")
-	
+
 	resp, err := c.sendAndWait(OpContactSearch, payload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var contacts []Contact
-	
+
 	if contactsRaw, ok := resp.Payload["contacts"].([]interface{}); ok {
 		for _, contactRaw := range contactsRaw {
 			contactMap, ok := contactRaw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			contactBytes, _ := json.Marshal(contactMap)
 			var contact Contact
 			if err := json.Unmarshal(contactBytes, &contact); err == nil {
@@ -298,7 +304,7 @@ func (c *Client) SearchContacts(query string) ([]Contact, error) {
 			}
 		}
 	}
-	
+
 	return contacts, nil
 }
 
@@ -314,4 +320,3 @@ func GetUserAvatarURL(user *User) string {
 	}
 	return user.BaseURL
 }
-
