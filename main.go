@@ -54,6 +54,7 @@ type server struct {
 	router    *mux.Router
 	exPath    string
 	startTime time.Time
+	pauses    *pauseRegistry
 }
 
 // Global variables
@@ -89,7 +90,7 @@ var (
 	userSemaphoreManager *UserSemaphoreManager
 )
 
-const version = "2.0.0-max"
+const version = "1.5.0"
 
 func init() {
 	err := godotenv.Load()
@@ -257,8 +258,14 @@ func main() {
 		db:        db,
 		exPath:    exPath,
 		startTime: time.Now(),
+		pauses:    newPauseRegistry(),
 	}
 	s.routes()
+
+	// Before any account connects: a paused account must not send a thing.
+	if err := s.restorePauses(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to restore the account pauses")
+	}
 
 	s.connectOnStartup()
 

@@ -167,7 +167,11 @@ func (c *Client) Login(authToken string) (map[string]interface{}, error) {
 
 	c.Logger.Info().Msg("Logging in with auth token")
 
-	resp, err := c.sendAndWait(OpLogin, payload)
+	timeout := c.LoginTimeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	resp, err := c.sendAndWaitWithTimeout(OpLogin, payload, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +337,8 @@ func (c *Client) Logout() error {
 	return c.Close()
 }
 
-// ConnectAndLogin connects and performs login in one step
+// ConnectAndLogin connects and performs login in one step. A failure of the
+// login itself comes back as a *LoginError.
 func (c *Client) ConnectAndLogin(authToken string, userAgent *UserAgent) (map[string]interface{}, error) {
 	if err := c.Connect(); err != nil {
 		return nil, err
@@ -347,7 +352,7 @@ func (c *Client) ConnectAndLogin(authToken string, userAgent *UserAgent) (map[st
 	syncData, err := c.Login(authToken)
 	if err != nil {
 		c.Close()
-		return nil, err
+		return nil, &LoginError{Err: err}
 	}
 
 	c.StartPingLoop()

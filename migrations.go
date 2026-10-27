@@ -42,7 +42,48 @@ var migrations = []Migration{
 		Name:  "add_qr_session_state",
 		UpSQL: addQRSessionStateSQL,
 	},
+	{
+		ID:    6,
+		Name:  "add_phone_lookups",
+		UpSQL: addPhoneLookupsSQL,
+	},
+	{
+		ID:    7,
+		Name:  "add_account_pauses",
+		UpSQL: addAccountPausesSQL,
+	},
 }
+
+// phone_lookups caches MAX's answers to the phone lookup (opcode 46) per
+// gateway user, keyed by the phone exactly as it went to MAX (see lookups.go).
+// max_user_id is the contact's MAX id, NULL when MAX answered not.found;
+// looked_up_at is unix seconds. Rows go with the user. Plain SQL that
+// PostgreSQL and SQLite both run as is (SQLite takes the default branch of
+// applySQLiteMigration).
+const addPhoneLookupsSQL = `
+CREATE TABLE IF NOT EXISTS phone_lookups (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    phone TEXT NOT NULL,
+    max_user_id BIGINT,
+    looked_up_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, phone)
+)
+`
+
+// account_pauses holds one row per paused MAX account (see pauses.go). The
+// key is the account's MAX user id, not a gateway user: every gateway user
+// logged into the account is paused, and the row outlives them, so a new
+// gateway user of the same account is paused too. reason is the pauseReason
+// (spam), upstream_code the MAX error code that paused the account,
+// paused_at unix seconds.
+const addAccountPausesSQL = `
+CREATE TABLE IF NOT EXISTS account_pauses (
+    max_user_id BIGINT PRIMARY KEY,
+    reason TEXT NOT NULL,
+    upstream_code TEXT NOT NULL,
+    paused_at BIGINT NOT NULL
+)
+`
 
 // Initial schema for MaxAPI
 const initialSchemaMaxSQL = `

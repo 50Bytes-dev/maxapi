@@ -180,8 +180,9 @@ func (s *server) respondError(w http.ResponseWriter, r *http.Request, status int
 
 // respondSendError is respondError for the delivery outcome codes. When err
 // carries an error code MAX itself answered with, the body also gets it as
-// upstreamCode.
-func (s *server) respondSendError(w http.ResponseWriter, r *http.Request, status int, code, msg string, err error) {
+// upstreamCode. A non-nil pause adds paused and pauseReason: sending from the
+// account is paused (see pauses.go).
+func (s *server) respondSendError(w http.ResponseWriter, r *http.Request, status int, code, msg string, err error, pause *accountPause) {
 	body := map[string]interface{}{
 		"success": false,
 		"error":   msg,
@@ -189,6 +190,10 @@ func (s *server) respondSendError(w http.ResponseWriter, r *http.Request, status
 	}
 	if upstream, ok := maxclient.ServerErrorCode(err); ok {
 		body["upstreamCode"] = upstream
+	}
+	if pause != nil {
+		body["paused"] = true
+		body["pauseReason"] = pause.reason
 	}
 	s.Respond(w, r, status, body)
 }
@@ -336,14 +341,16 @@ func enrichWebhookPayload(payload map[string]string, userID string) map[string]i
 	return body
 }
 
-// callHook delivers an event-style webhook. Retries on 5xx / network errors
-// with exponential backoff bounded by webhookRetry* flags. Payload never
-// contains the user's API token — identity comes from userID/instanceID/
+// callHook delivers an event-style webhook through the user's HTTP client,
+// which the caller takes from clientManager before going asynchronous: the
+// events sent right before cleanupClient (AuthExpired, LoggedOut,
+// ReconnectExhausted) would otherwise find it gone. Retries on 5xx / network
+// errors with exponential backoff bounded by webhookRetry* flags. Payload
+// never contains the user's API token — identity comes from userID/instanceID/
 // instanceName fields (see enrichWebhookPayload).
-func callHook(myurl string, payload map[string]string, id string) {
+func callHook(client *resty.Client, myurl string, payload map[string]string, id string) {
 	log.Info().Str("url", myurl).Msg("Sending POST to client " + id)
 
-	client := clientManager.GetHTTPClient(id)
 	if client == nil {
 		log.Warn().Str("userID", id).Msg("HTTP client not found, skipping webhook")
 		return

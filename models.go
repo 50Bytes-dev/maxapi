@@ -24,13 +24,24 @@ type MessageResponse struct {
 // ========== SESSION RESPONSES ==========
 
 // StatusResponse represents the connection status response
-// @Description Connection and authentication status
+// @Description Connection and authentication status. paused is always
+// @Description present; pauseReason and upstreamCode only while paused.
 type StatusResponse struct {
-	Success       bool  `json:"success" example:"true"`
-	Connected     bool  `json:"connected" example:"true"`
-	Authenticated bool  `json:"authenticated" example:"true"`
-	LoggedIn      bool  `json:"loggedIn" example:"true"`
-	MaxUserID     int64 `json:"maxUserID" example:"123456789"`
+	Success       bool   `json:"success" example:"true"`
+	Connected     bool   `json:"connected" example:"true"`
+	Authenticated bool   `json:"authenticated" example:"true"`
+	LoggedIn      bool   `json:"loggedIn" example:"true"`
+	MaxUserID     int64  `json:"maxUserID" example:"123456789"`
+	Paused        bool   `json:"paused" example:"false"`
+	PauseReason   string `json:"pauseReason,omitempty" example:"spam"`
+	UpstreamCode  string `json:"upstreamCode,omitempty" example:"error.user.restricted.send"`
+}
+
+// ResumeResponse is returned by POST /session/resume.
+// @Description The MAX account whose pause was lifted.
+type ResumeResponse struct {
+	Success   bool  `json:"success" example:"true"`
+	MaxUserID int64 `json:"maxUserID" example:"123456789"`
 }
 
 // ========== CHAT RESPONSES ==========
@@ -155,6 +166,13 @@ type QRCodeResponse struct {
 type ConnectBody struct {
 	Subscribe []string `json:"subscribe" example:"Message,ReadReceipt"`
 	Immediate bool     `json:"immediate" example:"false"`
+}
+
+// ResumeBody is the optional body of POST /session/resume. captchaKey is
+// part of the VK gateway's contract; MAX pauses have no captcha, so it is
+// read and ignored.
+type ResumeBody struct {
+	CaptchaKey string `json:"captchaKey,omitempty" example:""`
 }
 
 // MessageBody represents the request body for sending a text message
@@ -357,7 +375,7 @@ type UserDetailResponse struct {
 type HealthResponse struct {
 	Success        bool   `json:"success" example:"true"`
 	Status         string `json:"status" example:"ok"`
-	Version        string `json:"version" example:"2.0.0-max"`
+	Version        string `json:"version" example:"1.5.0"`
 	UptimeSeconds  int64  `json:"uptime_seconds" example:"12345"`
 	DBOk           bool   `json:"db_ok" example:"true"`
 	RabbitMQOk     bool   `json:"rabbitmq_ok" example:"true"`

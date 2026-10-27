@@ -47,6 +47,13 @@ var (
 	ErrMessageNotFound = NewError("message_not_found", "Message not found", "Message Error")
 )
 
+// ServerCodeNotFound is the code MAX answers a lookup that found nothing with,
+// e.g. CONTACT_INFO_BY_PHONE (46) for a number without a MAX account:
+// {"error": "not.found", "title": "Не найдено", "message": "Cannot found contact by phone"}.
+// It arrives as a fresh *Error, so errors.Is(err, ErrUserNotFound) does not
+// match it: compare ServerErrorCode instead.
+const ServerCodeNotFound = "not.found"
+
 // Auth error codes that indicate token is expired/invalid
 var authErrorCodes = map[string]bool{
 	"login.token":   true, // FAIL_LOGIN_TOKEN
@@ -94,13 +101,27 @@ func IsError(payload map[string]interface{}) bool {
 	return ok
 }
 
+// LoginError is a failure of the LOGIN request (opcode 19) itself, after the
+// connection and SessionInit went through. ConnectAndLogin wraps it so the
+// caller can tell it from a network failure on the way: MAX refuses a login
+// with an error code, but may also just drop the socket or never answer.
+// Its text is that of the wrapped error.
+type LoginError struct {
+	Err error
+}
+
+func (e *LoginError) Error() string { return e.Err.Error() }
+
+func (e *LoginError) Unwrap() error { return e.Err }
+
 // IsAuthError checks if the error is an authentication error (token expired/invalid)
 func IsAuthError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	if e, ok := err.(*Error); ok {
+	var e *Error
+	if errors.As(err, &e) {
 		return authErrorCodes[e.Code]
 	}
 

@@ -504,12 +504,14 @@ func (s *server) Connect() http.HandlerFunc {
 		}
 
 		if clientManager.IsConnected(txtid) {
-			s.Respond(w, r, http.StatusOK, map[string]interface{}{
+			resp := map[string]interface{}{
 				"success":          true,
 				"details":          "Already connected to MAX",
 				"events":           eventstring,
 				"alreadyConnected": true,
-			})
+			}
+			addPauseFields(resp, s.pauseOf(s.maxUserIDOf(txtid)))
+			s.Respond(w, r, http.StatusOK, resp)
 			return
 		}
 
@@ -634,8 +636,11 @@ func (s *server) Logout() http.HandlerFunc {
 		// Clear cache before delete
 		userinfocache.Delete(token)
 
-		// Delete user immediately, don't wait for LoggedOut event
-		// sendWebhook=false because LoggedOut event will send it (if received)
+		// Delete user immediately, don't wait for LoggedOut event.
+		// sendWebhook=false: the caller asked for the logout and gets this
+		// answer. A LoggedOut push MAX sends before the client closes is
+		// announced by handleEvent. safeDeleteUser also stops the user's
+		// reconnect loop, which would otherwise log in again.
 		s.safeDeleteUser(txtid, false)
 
 		response := map[string]interface{}{
@@ -679,9 +684,65 @@ func (s *server) GetStatus() http.HandlerFunc {
 			"loggedIn":      connected && authenticated,
 			"maxUserID":     maxUserID,
 		}
+		// The pause of the MAX account this user is logged into, also without
+		// a session. A paused account keeps its session: connected stays as
+		// it is, and callers read paused first.
+		addPauseFields(response, s.pauseOf(s.maxUserIDOf(txtid)))
 
 		s.Respond(w, r, http.StatusOK, response)
 	}
+}
+
+// Resume lifts the pause of the MAX account the user is logged into (see
+// pauses.go), for every gateway user of that account, and returns the account
+// as maxUserID: the caller resumes all its connections of it. An account that
+// is not paused answers the same, and nothing changes. The body is optional;
+// captchaKey, which the VK gateway takes, is ignored. No MAX call is made.
+// @Summary Resume sending from a paused account
+// @Description Lifts the pause MAX's limit or restriction errors put on the account. Body optional, captchaKey ignored.
+// @Tags Session
+// @Accept json
+// @Produce json
+// @Param request body ResumeBody false "Ignored captcha answer"
+// @Success 200 {object} ResumeResponse
+// @Failure 400 {object} ErrorResponse "INVALID_INPUT"
+// @Failure 500 {object} ErrorResponse "INTERNAL_ERROR, the account stays paused"
+// @Security ApiKeyAuth
+// @Router /session/resume [post]
+func (s *server) Resume() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		var body ResumeBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			s.respondError(w, r, http.StatusBadRequest, ErrInvalidInput, "could not decode payload")
+			return
+		}
+
+		maxUserID := s.maxUserIDOf(txtid)
+		if err := s.resumeAccount(txtid, maxUserID); err != nil {
+			log.Error().Err(err).Str("userID", txtid).Msg("Failed to lift the account pause")
+			s.respondError(w, r, http.StatusInternalServerError, ErrInternalFailure, "database error, the account stays paused")
+			return
+		}
+
+		s.Respond(w, r, http.StatusOK, map[string]interface{}{
+			"success":   true,
+			"maxUserID": maxUserID,
+		})
+	}
+}
+
+// maxUserIDOf returns the MAX account the user is logged into: the live
+// session's, else the one stored at the last login (users.max_user_id), 0
+// when none is known. Pauses are kept by it.
+func (s *server) maxUserIDOf(userID string) int64 {
+	if client := clientManager.GetMaxClient(userID); client != nil && client.MaxUserID != 0 {
+		return client.MaxUserID
+	}
+	var maxUserID sql.NullInt64
+	_ = s.db.Get(&maxUserID, "SELECT max_user_id FROM users WHERE id=$1", userID)
+	return maxUserID.Int64
 }
 
 // RequestSync reconnects and returns fresh sync data
@@ -798,6 +859,23 @@ const (
 	sendTextReplyTimeout  = 5 * time.Second
 )
 
+// lookupNotFoundCode reports whether MAX answered a phone lookup with its
+// not.found error. That is a fresh *maxclient.Error, so it is told by its
+// server code: errors.Is with ErrUserNotFound compares pointers and misses
+// it, which made such numbers answer 503 lookup_failed, and callers looked
+// them up again and again.
+func lookupNotFoundCode(err error) bool {
+	code, fromMAX := maxclient.ServerErrorCode(err)
+	return fromMAX && code == maxclient.ServerCodeNotFound
+}
+
+// lookupFoundNoUser reports whether a phone lookup failed because MAX has no
+// user with the number: MAX answered without a usable contact
+// (ErrUserNotFound), or with its not.found error.
+func lookupFoundNoUser(err error) bool {
+	return errors.Is(err, maxclient.ErrUserNotFound) || lookupNotFoundCode(err)
+}
+
 // SendMessage sends a text message
 // @Summary Send text message
 // @Description Sends a text message to a chat. Errors carry a delivery outcome code, see API.md
@@ -839,18 +917,47 @@ func (s *server) SendMessage() http.HandlerFunc {
 
 		chatID := msg.ChatID
 
-		// If phone provided and no explicit chatId, search by phone
+		// A paused MAX account makes no MAX call until the owner resumes it,
+		// whichever gateway user is logged into it.
+		maxUserID := s.maxUserIDOf(txtid)
+		if pause := s.pauseOf(maxUserID); pause != nil {
+			s.respondSendError(w, r, http.StatusUnprocessableEntity, CodeSendRejected,
+				"sending from this account is paused until the owner resumes it", nil, pause)
+			return
+		}
+
+		// If phone provided and no explicit chatId, search by phone: in the
+		// lookup cache first, then in MAX.
+		fromCache := false
 		if chatID == 0 {
-			user, err := client.SearchByPhoneWithTimeout(msg.Phone, sendTextLookupTimeout)
-			if err != nil {
-				if errors.Is(err, maxclient.ErrInvalidPhone) || errors.Is(err, maxclient.ErrUserNotFound) {
-					s.respondSendError(w, r, http.StatusNotFound, CodeAddressNotFound, fmt.Sprintf("user not found: %v", err), err)
-				} else {
-					s.respondSendError(w, r, http.StatusServiceUnavailable, CodeLookupFailed, fmt.Sprintf("user lookup failed: %v", err), err)
-				}
+			contactID, known := s.cachedLookup(txtid, msg.Phone)
+			if known && contactID == 0 {
+				s.respondSendError(w, r, http.StatusNotFound, CodeAddressNotFound,
+					"user not found: MAX had no user with this phone at the last lookup", nil, nil)
 				return
 			}
-			chatID = maxclient.GetDialogID(client.MaxUserID, user.ID)
+			fromCache = known
+			if !known {
+				user, err := client.SearchByPhoneWithTimeout(msg.Phone, sendTextLookupTimeout)
+				if err != nil {
+					switch {
+					case errors.Is(err, maxclient.ErrInvalidPhone), errors.Is(err, maxclient.ErrUserNotFound):
+						// Not cached: only MAX's explicit not.found is trusted
+						// for later sends, not an answer without a usable contact.
+						s.respondSendError(w, r, http.StatusNotFound, CodeAddressNotFound, fmt.Sprintf("user not found: %v", err), err, nil)
+					case lookupNotFoundCode(err):
+						s.storeLookup(txtid, msg.Phone, 0)
+						s.respondSendError(w, r, http.StatusNotFound, CodeAddressNotFound, fmt.Sprintf("user not found: %v", err), err, nil)
+					default:
+						s.respondSendError(w, r, http.StatusServiceUnavailable, CodeLookupFailed, fmt.Sprintf("user lookup failed: %v", err), err,
+							s.pauseOnLimit(txtid, maxUserID, err))
+					}
+					return
+				}
+				contactID = user.ID
+				s.storeLookup(txtid, msg.Phone, contactID)
+			}
+			chatID = maxclient.GetDialogID(client.MaxUserID, contactID)
 		}
 
 		result, err := client.SendMessage(maxclient.SendMessageOptions{
@@ -867,9 +974,16 @@ func (s *server) SendMessage() http.HandlerFunc {
 			// once the frame was out (also reported as ErrNotConnected) —
 			// leaves the outcome unknown.
 			if _, rejected := maxclient.ServerErrorCode(err); rejected {
-				s.respondSendError(w, r, http.StatusUnprocessableEntity, CodeSendRejected, fmt.Sprintf("send rejected: %v", err), err)
+				pause := s.pauseOnLimit(txtid, maxUserID, err)
+				if pause == nil && fromCache {
+					// The cached id may be stale (the number changed hands,
+					// the contact's account is gone): the next send looks the
+					// number up again.
+					s.dropLookup(txtid, msg.Phone)
+				}
+				s.respondSendError(w, r, http.StatusUnprocessableEntity, CodeSendRejected, fmt.Sprintf("send rejected: %v", err), err, pause)
 			} else {
-				s.respondSendError(w, r, http.StatusInternalServerError, CodeSendFailed, fmt.Sprintf("send failed: %v", err), err)
+				s.respondSendError(w, r, http.StatusInternalServerError, CodeSendFailed, fmt.Sprintf("send failed: %v", err), err, nil)
 			}
 			return
 		}
@@ -1515,7 +1629,7 @@ func (s *server) CheckUser() http.HandlerFunc {
 				if len(user.Names) > 0 {
 					result["name"] = user.Names[0].Name
 				}
-			case errors.Is(err, maxclient.ErrUserNotFound):
+			case lookupFoundNoUser(err):
 				// MAX answered and knows no such user.
 			default:
 				// The lookup itself failed: "no such user" is not known.
@@ -2522,6 +2636,8 @@ func (s *server) DeleteUser() http.HandlerFunc {
 			clientManager.DeleteKillChannel(userID)
 		}
 
+		// The user's phone lookups go with the row; a pause of its MAX
+		// account stays (see pauses.go).
 		_, err := s.db.Exec("DELETE FROM users WHERE id=$1", userID)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)

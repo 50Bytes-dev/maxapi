@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,7 @@ const (
 
 	// Default timeouts
 	DefaultTimeout    = 30 * time.Second
+	WriteTimeout      = 10 * time.Second
 	PingInterval      = 30 * time.Second
 	ReconnectDelay    = 1 * time.Second
 	MaxReconnectDelay = 60 * time.Second
@@ -47,9 +49,18 @@ type Client struct {
 	// Tests point it at a local fake server.
 	URI string
 
+	// LoginTimeout bounds the wait for MAX's answer to LOGIN; zero means
+	// DefaultTimeout. Tests shorten it.
+	LoginTimeout time.Duration
+
 	// Connection
 	conn   *websocket.Conn
 	connMu sync.RWMutex
+
+	// writeMu serializes frame writes. gorilla/websocket supports one
+	// concurrent writer and panics on a second one, which takes the whole
+	// gateway, and every account's session with it, down.
+	writeMu sync.Mutex
 
 	// Authentication
 	DeviceID  string
@@ -294,7 +305,7 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 		c.connMu.RUnlock()
 		return nil, ErrNotConnected
 	}
-	err = c.conn.WriteMessage(websocket.TextMessage, msgBytes)
+	err = c.writeFrame(msgBytes)
 	c.connMu.RUnlock()
 
 	if err != nil {
@@ -327,6 +338,19 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 	case <-c.ctx.Done():
 		return nil, ErrNotConnected
 	}
+}
+
+// writeFrame writes one frame to the connection. Every writer goes through
+// it: requests from HTTP handlers and the ping goroutine run concurrently.
+// The deadline keeps a stuck write from holding writeMu, and with it every
+// other request, forever. The caller holds connMu for reading.
+func (c *Client) writeFrame(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := c.conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
+		return err
+	}
+	return c.conn.WriteMessage(websocket.TextMessage, data)
 }
 
 // receiveLoop handles incoming WebSocket messages
@@ -424,15 +448,88 @@ func (c *Client) handleNotification(resp *Response) {
 		event.Type = "PresenceUpdate"
 	case OpReconnect:
 		event.Type = "Disconnected"
+		c.logPushedFrame(resp, "MAX told the client to reconnect")
 	case OpLogout:
 		event.Type = "LoggedOut"
+		c.logPushedFrame(resp, "MAX ended the session")
 	default:
 		event.Type = "Unknown"
+		c.logUnknownFrame(resp)
 	}
 
 	if c.eventHandler != nil {
 		c.eventHandler(event)
 	}
+}
+
+// maxLoggedPayload caps the payload logPushedFrame writes, in bytes.
+const maxLoggedPayload = 2048
+
+// logPushedFrame logs, at Info, a frame MAX pushed on its own: its payload is
+// the only record of why MAX dropped or ended a session. The payload is
+// truncated to maxLoggedPayload bytes, and the value of every key naming a
+// token is masked (a login token travels as "token", QR confirmation hands it
+// out under "tokenAttrs").
+func (c *Client) logPushedFrame(resp *Response, msg string) {
+	c.Logger.Info().
+		Int("opcode", resp.Opcode).
+		Int("seq", resp.Seq).
+		Str("payload", payloadForLog(resp.Payload)).
+		Msg(msg)
+}
+
+// logUnknownFrame logs, at Info, a frame of an opcode the client does not
+// handle: its opcode and the names of its payload keys, never the values.
+// Unknown opcodes carry chat content too (drafts, for one), and the log is no
+// place for the owner's correspondence.
+func (c *Client) logUnknownFrame(resp *Response) {
+	keys := make([]string, 0, len(resp.Payload))
+	for k := range resp.Payload {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	c.Logger.Info().
+		Int("opcode", resp.Opcode).
+		Int("seq", resp.Seq).
+		Strs("payloadKeys", keys).
+		Msg("Unknown frame from MAX")
+}
+
+// payloadForLog renders a frame payload for the log: tokens masked, at most
+// maxLoggedPayload bytes.
+func payloadForLog(payload map[string]interface{}) string {
+	data, err := json.Marshal(maskTokens(payload))
+	if err != nil {
+		return "(unencodable payload)"
+	}
+	if len(data) > maxLoggedPayload {
+		return strings.ToValidUTF8(string(data[:maxLoggedPayload]), "") + "...(truncated)"
+	}
+	return string(data)
+}
+
+// maskTokens returns a copy of v in which the value under every key that
+// contains "token", in any case, is replaced by "***".
+func maskTokens(v interface{}) interface{} {
+	switch x := v.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(x))
+		for k, val := range x {
+			if strings.Contains(strings.ToLower(k), "token") {
+				out[k] = "***"
+			} else {
+				out[k] = maskTokens(val)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(x))
+		for i, val := range x {
+			out[i] = maskTokens(val)
+		}
+		return out
+	}
+	return v
 }
 
 // determineMessageEventType determines the type of message event

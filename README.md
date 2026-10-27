@@ -6,6 +6,7 @@ MaxAPI is a multi-tenant REST API gateway for MAX Messenger, providing a simple 
 
 - **Multi-tenant architecture**: Support multiple MAX accounts on a single server
 - **QR Authentication**: Scan a QR code in the MAX mobile app to log in
+- **Account protection**: phone lookups are cached per gateway user (found contacts for 90 days, dropped when MAX refuses a send to them; MAX's `not.found` for 30 days); MAX's limit/restriction errors pause the MAX account, for every gateway user logged into it and across user deletion, new logins and restarts, until `POST /session/resume`; the reconnect loop stops after 3 login refusals in a row (token kept, next attempt on `POST /session/connect`) instead of logging in forever (see [API.md](API.md#account-pause))
 - **Real-time webhooks**: Receive events via webhooks or RabbitMQ — with automatic retry on 5xx/network errors
 - **Durable RabbitMQ delivery**: Persistent messages, transparent reconnect, optional topic exchange with event-type routing keys
 - **Media handling**: Upload/download photos, videos, audio, and documents — per-user concurrency limit protects noisy users
@@ -67,7 +68,7 @@ docker build --platform linux/amd64 -t maxapi .
 | `-webhookretrydelay` | Base delay (s) between webhook retries (doubled per attempt) | `30` |
 | `-rabbitretrycount` | Max RabbitMQ reconnect attempts | `10` |
 | `-rabbitretrydelay` | Base delay (s) between RabbitMQ reconnect attempts | `5` |
-| `-maxconnectdelay` | Base delay (s) between MAX WS reconnect attempts | `5` |
+| `-maxconnectdelay` | Base delay (s) between MAX WS reconnect attempts (doubled per attempt, spread ±20%) | `5` |
 | `-maxconnectcap` | Max backoff (s) per MAX reconnect attempt | `300` |
 | `-maxconnectretries` | Max MAX reconnect attempts (0 = infinite) | `0` |
 | `-userconcurrency` | Max concurrent heavy ops per user (media, webhook-with-file) | `4` |
@@ -181,7 +182,8 @@ See [API.md](API.md) for the complete API documentation.
 - `GET /session/qr` - Get current QR code (base64 PNG) for an in-progress auth session
 - `POST /session/disconnect` - Disconnect / cancel in-progress QR session
 - `POST /session/logout` - Logout and remove user
-- `GET /session/status` - Connection / authentication status
+- `GET /session/status` - Connection / authentication status, account pause
+- `POST /session/resume` - Lift the pause MAX's limit/restriction errors put on the MAX account
 
 #### Messages
 - `POST /chat/send/text` - Send text
@@ -249,7 +251,8 @@ See [API.md](API.md) for the complete API documentation.
 | `QRScanned` | User scanned QR code in the mobile app |
 | `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
 | `QRExpired` | QR refresh budget exhausted or session cancelled |
-| `AuthExpired` | Stored auth token is no longer valid |
+| `AuthExpired` | The reconnect loop stopped: an auth error (token erased, new QR login needed) or 3 reconnect logins in a row refused by MAX (token kept, `POST /session/connect` tries again); `reason` carries the error |
+| `LoggedOut` | MAX ended the session; the user is deleted and its reconnect loop stops |
 | `ChatUpdate` | Chat was updated |
 | `Typing` | User is typing |
 | `ReactionChange` | Reaction changed |
@@ -288,7 +291,7 @@ curl http://localhost:5555/health
 {
     "success": true,
     "status": "ok",
-    "version": "2.0.0-max",
+    "version": "1.5.0",
     "uptime_seconds": 12345,
     "db_ok": true,
     "rabbitmq_ok": true,
@@ -314,6 +317,8 @@ maxapi/
 ├── helpers.go        # Utility functions
 ├── db.go             # Database initialization
 ├── migrations.go     # Schema migrations
+├── lookups.go        # Phone lookup cache
+├── pauses.go         # Account pause on MAX limit/restriction errors
 ├── rabbitmq.go       # RabbitMQ integration
 ├── s3manager.go      # S3 integration
 └── maxclient/        # MAX API client package

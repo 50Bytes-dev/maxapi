@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand"
 	"maxapi/maxclient"
 	"net/http"
 	"os"
@@ -30,8 +32,9 @@ type MyClient struct {
 	s             *server
 }
 
-// sendToGlobalWebHook sends event data to the global webhook
-func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
+// sendToGlobalWebHook sends event data to the global webhook through the
+// user's HTTP client (see callHook)
+func sendToGlobalWebHook(httpClient *resty.Client, jsonData []byte, token string, userID string) {
 	jsonDataStr := string(jsonData)
 
 	instanceName := ""
@@ -48,12 +51,13 @@ func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
 			"userID":       userID,
 			"instanceName": instanceName,
 		}
-		callHook(*globalWebhook, globalData, userID)
+		callHook(httpClient, *globalWebhook, globalData, userID)
 	}
 }
 
-// sendToUserWebHook sends event data to the user's webhook
-func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID string, token string) {
+// sendToUserWebHook sends event data to the user's webhook through the user's
+// HTTP client (see callHook)
+func sendToUserWebHook(httpClient *resty.Client, webhookurl string, path string, jsonData []byte, userID string, token string) {
 	instanceName := ""
 	userinfo, found := userinfocache.Get(token)
 	if found {
@@ -65,12 +69,15 @@ func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID s
 		"instanceName": instanceName,
 	}
 
-	log.Debug().Interface("webhookData", data).Msg("Data being sent to webhook")
+	// Neither the API token nor the event goes to the log: QRAuthorized
+	// carries the MAX auth token, Sync the account's chats and contacts.
+	log.Debug().Str("userID", userID).Str("instanceName", instanceName).Int("bytes", len(jsonData)).
+		Msg("Data being sent to webhook")
 
 	if webhookurl != "" {
 		log.Info().Str("url", webhookurl).Msg("Calling user webhook")
 		if path == "" {
-			go callHook(webhookurl, data, userID)
+			go callHook(httpClient, webhookurl, data, userID)
 		} else {
 			errChan := make(chan error, 1)
 			go func() {
@@ -122,7 +129,7 @@ func getUserWebhookUrl(token string) string {
 	webhookurl := ""
 	myuserinfo, found := userinfocache.Get(token)
 	if !found {
-		log.Warn().Str("token", token).Msg("Could not call webhook as there is no user for this token")
+		log.Warn().Msg("Could not call webhook as there is no cached user for the token")
 	} else {
 		webhookurl = myuserinfo.(Values).Get("Webhook")
 	}
@@ -160,8 +167,11 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 		return
 	}
 
-	sendToUserWebHook(webhookurl, path, jsonData, mycli.userID, mycli.token)
-	go sendToGlobalWebHook(jsonData, mycli.token, mycli.userID)
+	// Taken now, not in the delivery goroutines: AuthExpired, LoggedOut and
+	// ReconnectExhausted go out right before cleanupClient drops the client.
+	httpClient := clientManager.GetHTTPClient(mycli.userID)
+	sendToUserWebHook(httpClient, webhookurl, path, jsonData, mycli.userID, mycli.token)
+	go sendToGlobalWebHook(httpClient, jsonData, mycli.token, mycli.userID)
 	go sendToGlobalRabbit(jsonData, mycli.token, mycli.userID)
 }
 
@@ -218,7 +228,7 @@ func (s *server) connectOnStartup() {
 			continue
 		}
 
-		log.Info().Str("token", token).Msg("Connect to MAX on startup")
+		log.Info().Str("userID", txtid).Str("name", name).Msg("Connect to MAX on startup")
 
 		v := Values{map[string]string{
 			"Id":            txtid,
@@ -425,8 +435,14 @@ func (s *server) startClient(userID string, authToken string, deviceID string, t
 	s.runClientLoop(userID, authToken, client, mycli)
 }
 
+// reconnectDelayUnit is the unit of the -maxconnectdelay and -maxconnectcap
+// values; tests shrink it.
+var reconnectDelayUnit = time.Second
+
 // reconnectBackoff returns the delay for the Nth reconnect attempt (1-indexed).
-// Doubles per attempt from -maxconnectdelay up to -maxconnectcap seconds.
+// Doubles per attempt from -maxconnectdelay up to -maxconnectcap seconds, then
+// spreads by ±20% so that accounts dropped together (a MAX outage, a gateway
+// restart) do not all log in again at the same moment.
 func reconnectBackoff(attempt int) time.Duration {
 	base := defaultConnectRetryDelay
 	if connectRetryDelay != nil && *connectRetryDelay > 0 {
@@ -444,7 +460,85 @@ func reconnectBackoff(attempt int) time.Duration {
 	if secs <= 0 || secs > cap {
 		secs = cap
 	}
-	return time.Duration(secs) * time.Second
+	return time.Duration(float64(time.Duration(secs)*reconnectDelayUnit) * (0.8 + 0.4*rand.Float64()))
+}
+
+// maxLoginRefusals is how many reconnect logins in a row MAX may refuse
+// before the loop stops. Logging in again and again after MAX ended a
+// session is what gets an account blocked (PyMax #106). Network failures on
+// the way to the login neither count nor reset the count: they say nothing
+// about the account. A successful login resets it.
+const maxLoginRefusals = 3
+
+// loginRefusal reports whether a failed reconnect login counts as MAX
+// refusing it, and why: an error code of MAX's own, on SessionInit or on
+// LOGIN, or LOGIN unanswered or losing its socket once the connection and
+// SessionInit went through, which is how MAX may refuse too. A network
+// failure before LOGIN is no refusal. Auth errors are told apart before.
+func loginRefusal(err error) (reason string, refused bool) {
+	if code, ok := maxclient.ServerErrorCode(err); ok {
+		return code, true
+	}
+	var loginErr *maxclient.LoginError
+	if errors.As(err, &loginErr) {
+		switch {
+		case errors.Is(err, maxclient.ErrTimeout):
+			return "login timed out", true
+		case errors.Is(err, maxclient.ErrNotConnected):
+			return "login connection lost", true
+		}
+	}
+	return "", false
+}
+
+// stopAfterLoginFailure handles a reconnect login of client that failed with
+// err and reports whether the reconnect loop must stop:
+//   - on an auth error (authErrorCodes) the token is dead and is erased at
+//     once, as before;
+//   - on the maxLoginRefusals-th refusal in a row (loginRefusal) the token is
+//     kept: a partial MAX failure would otherwise erase every account's token
+//     within minutes and send every owner through a new QR login, itself a
+//     risk signal. The next attempt waits for POST /session/connect, that is
+//     for the owner.
+//
+// Either stop marks the user disconnected, closes the client, sends
+// AuthExpired with the reason (the error text, MAX's code, or "login timed
+// out") and drops the user's clients. On anything else, a network failure,
+// the loop retries with backoff.
+func (s *server) stopAfterLoginFailure(userID string, client *maxclient.Client, mycli *MyClient, err error, refusals *int) bool {
+	var reason string
+	if maxclient.IsAuthError(err) {
+		log.Warn().Str("userID", userID).Msg("Auth token expired during reconnect, stopping")
+		if _, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID); dbErr != nil {
+			log.Error().Err(dbErr).Msg("Failed to clear auth token")
+		}
+		reason = err.Error()
+	} else {
+		why, refused := loginRefusal(err)
+		if !refused {
+			return false
+		}
+		*refusals++
+		if *refusals < maxLoginRefusals {
+			log.Warn().Str("userID", userID).Str("reason", why).Int("refusals", *refusals).
+				Msg("MAX refused the reconnect login")
+			return false
+		}
+		log.Warn().Str("userID", userID).Str("reason", why).Int("refusals", *refusals).
+			Msg("MAX refused the reconnect login too many times in a row; stopping until POST /session/connect, the token is kept")
+		if _, dbErr := s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID); dbErr != nil {
+			log.Error().Err(dbErr).Msg("Failed to update disconnected status")
+		}
+		reason = why
+	}
+
+	client.Close()
+	sendEventWithWebHook(mycli, map[string]interface{}{
+		"type":   "AuthExpired",
+		"reason": reason,
+	}, "")
+	cleanupClient(userID)
+	return true
 }
 
 // reconnectLimit returns the configured max attempts (0 means infinite).
@@ -461,6 +555,7 @@ func reconnectLimit() int {
 func (s *server) runClientLoop(userID string, authToken string, client *maxclient.Client, mycli *MyClient) {
 	reconnectAttempts := 0
 	maxReconnectAttempts := reconnectLimit()
+	loginRefusals := 0
 
 	killCh := clientManager.GetKillChannel(userID)
 	for {
@@ -540,31 +635,16 @@ func (s *server) runClientLoop(userID string, authToken string, client *maxclien
 				syncData, err := client.ConnectAndLogin(authToken, nil)
 				if err != nil {
 					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
-
-					// Check if auth error (token expired/invalid) - stop reconnecting
-					if maxclient.IsAuthError(err) {
-						log.Warn().Str("userID", userID).Msg("Auth token expired during reconnect, stopping")
-						// Clear auth token in DB
-						_, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID)
-						if dbErr != nil {
-							log.Error().Err(dbErr).Msg("Failed to clear auth token")
-						}
-						// Send AuthExpired webhook
-						postmap := map[string]interface{}{
-							"type":   "AuthExpired",
-							"reason": err.Error(),
-						}
-						sendEventWithWebHook(mycli, postmap, "")
-						cleanupClient(userID)
+					if s.stopAfterLoginFailure(userID, client, mycli, err, &loginRefusals) {
 						return
 					}
-
 					continue
 				}
 
 				// Reconnect successful
 				log.Info().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Reconnected successfully")
 				reconnectAttempts = 0
+				loginRefusals = 0
 
 				// Update connected status
 				_, err = s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID)
@@ -592,6 +672,7 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 
 	reconnectAttempts := 0
 	maxReconnectAttempts := reconnectLimit()
+	loginRefusals := 0
 
 	killCh := clientManager.GetKillChannel(userID)
 	for {
@@ -603,9 +684,12 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 			s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
 			return
 		default:
-			// Get current client from manager (might have been replaced)
+			// Get current client from manager (might have been replaced). No
+			// client at all is not a replacement: safeDeleteUser sends the
+			// kill signal and then cleans up, and the loop must still get to
+			// the signal and close the client.
 			currentClient := clientManager.GetMaxClient(userID)
-			if currentClient != client {
+			if currentClient != nil && currentClient != client {
 				// Client was replaced, exit this goroutine
 				log.Info().Str("userid", userID).Msg("Client replaced, exiting maintainConnection")
 				return
@@ -661,27 +745,15 @@ func (s *server) maintainConnection(userID string, authToken string, deviceID st
 				syncData, err := client.ConnectAndLogin(authToken, nil)
 				if err != nil {
 					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
-
-					// Check if auth error (token expired/invalid) - stop reconnecting
-					if maxclient.IsAuthError(err) {
-						log.Warn().Str("userID", userID).Msg("Auth token expired during reconnect (maintainConnection), stopping")
-						// Clear auth token in DB
-						s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID)
-						// Send AuthExpired webhook
-						postmap := map[string]interface{}{
-							"type":   "AuthExpired",
-							"reason": err.Error(),
-						}
-						sendEventWithWebHook(mycli, postmap, "")
-						cleanupClient(userID)
+					if s.stopAfterLoginFailure(userID, client, mycli, err, &loginRefusals) {
 						return
 					}
-
 					continue
 				}
 
 				log.Info().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Reconnected")
 				reconnectAttempts = 0
+				loginRefusals = 0
 				s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID)
 
 				postmap := map[string]interface{}{
@@ -711,7 +783,10 @@ func cleanupClient(userID string) {
 	clientManager.DeleteKillChannel(userID)
 }
 
-// safeDeleteUser deletes a user safely, idempotent for repeated calls
+// safeDeleteUser deletes a user safely, idempotent for repeated calls. It may
+// run on the MaxClient's own receive goroutine (the LoggedOut event), so it
+// never closes the client itself: the kill signal makes the user's loop
+// goroutine do it.
 func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
 	log.Info().Str("userID", userID).Bool("sendWebhook", sendWebhook).Msg("Safe delete user")
 
@@ -723,12 +798,14 @@ func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
 	}
 	if !exists {
 		log.Info().Str("userID", userID).Msg("User already deleted from DB")
-		// Still cleanup clients just in case
+		// Still stop the loop and cleanup clients just in case
+		clientManager.SendKill(userID)
 		cleanupClient(userID)
 		return
 	}
 
-	// 2. Send webhook if needed (before deleting, while mycli still exists)
+	// 2. Send webhook if needed (before deleting, while mycli still exists).
+	// sendEventWithWebHook takes the HTTP client before step 4 drops it.
 	if sendWebhook {
 		mycli := clientManager.GetMyClient(userID)
 		if mycli != nil {
@@ -737,7 +814,9 @@ func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
 		}
 	}
 
-	// 3. Delete from DB
+	// 3. Delete from DB. Its phone lookups go with it; a pause of its MAX
+	// account stays, for the next gateway user logged into it (pauses.go).
+	token := s.tokenForUser(userID)
 	_, err = s.db.Exec("DELETE FROM users WHERE id=$1", userID)
 	if err != nil {
 		log.Error().Err(err).Str("userID", userID).Msg("Failed to delete user from DB")
@@ -745,11 +824,14 @@ func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
 		log.Info().Str("userID", userID).Msg("User deleted from DB")
 	}
 
-	// 4. Cleanup clients (idempotent)
-	cleanupClient(userID)
-
-	// 5. Non-blocking signal to any running loop goroutine
+	// 4. Non-blocking signal to any running loop goroutine, before
+	// cleanupClient drops the kill channel: a signal sent after it reaches no
+	// loop, which then goes on reconnecting with the deleted user's token.
 	clientManager.SendKill(userID)
+	cleanupClient(userID)
+	if token != "" {
+		userinfocache.Delete(token)
+	}
 }
 
 // handleEvent handles MAX events and sends webhooks
