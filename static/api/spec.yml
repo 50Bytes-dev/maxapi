@@ -9,7 +9,7 @@ info:
     answers a send with a limit or restriction error, the gateway pauses
     sending from that MAX account until the owner resumes it.
 
-    This schema describes maxapi 1.5.0. `API.md` in the repository is the full
+    This schema describes maxapi 1.5.1. `API.md` in the repository is the full
     contract; where the two disagree, the code is right.
 
     ## Authentication
@@ -1680,7 +1680,7 @@ components:
           example: ok
         version:
           type: string
-          example: 1.5.0
+          example: 1.5.1
         uptime_seconds:
           type: integer
           format: int64

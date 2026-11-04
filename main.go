@@ -65,7 +65,7 @@ var (
 	userSemaphoreManager *UserSemaphoreManager
 )
 
-const version = "1.5.0"
+const version = "1.5.1"
 
 func init() {
 	err := godotenv.Load()

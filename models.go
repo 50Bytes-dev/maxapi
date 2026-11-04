@@ -351,7 +351,7 @@ type UserDetailResponse struct {
 type HealthResponse struct {
 	Success        bool   `json:"success" example:"true"`
 	Status         string `json:"status" example:"ok"`
-	Version        string `json:"version" example:"1.5.0"`
+	Version        string `json:"version" example:"1.5.1"`
 	UptimeSeconds  int64  `json:"uptime_seconds" example:"12345"`
 	DBOk           bool   `json:"db_ok" example:"true"`
 	RabbitMQOk     bool   `json:"rabbitmq_ok" example:"true"`

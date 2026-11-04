@@ -1047,7 +1047,7 @@ Response (`200 OK` when healthy, `503 Service Unavailable` when DB is down):
 {
     "success": true,
     "status": "ok",
-    "version": "1.5.0",
+    "version": "1.5.1",
     "uptime_seconds": 12345,
     "db_ok": true,
     "rabbitmq_ok": true,
