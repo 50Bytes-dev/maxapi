@@ -438,17 +438,6 @@ func (s *server) finishQRSession(txtid string, client *maxclient.Client, eventTy
 // is already stored, the saved credentials are used to ConnectAndLogin
 // immediately. Calling twice while already connected is idempotent — only the
 // subscription list is refreshed.
-// @Summary Open a MAX session (QR or token-based)
-// @Description Kicks off a QR auth session when no auth token is stored, or reconnects with saved credentials. Poll GET /session/qr for the rendered QR code.
-// @Tags Session
-// @Accept json
-// @Produce json
-// @Param request body ConnectBody true "Connection options"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /session/connect [post]
 func (s *server) Connect() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -539,14 +528,6 @@ func (s *server) Connect() http.HandlerFunc {
 // session. Intended for pull-based UIs; webhook consumers receive the same QR
 // via the QRGenerated event. Mirrors wuzapi's /session/qr so that a client can
 // share a single abstraction across both providers.
-// @Summary Get current QR code
-// @Description Returns the QR code stored server-side for an in-progress auth session.
-// @Tags Session
-// @Produce json
-// @Success 200 {object} QRCodeResponse
-// @Failure 500 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /session/qr [get]
 func (s *server) GetQR() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -577,13 +558,6 @@ func (s *server) GetQR() http.HandlerFunc {
 // Disconnect disconnects from MAX. Also cancels an in-progress QR auth
 // session if one is active — so callers have a single endpoint to tear down
 // whatever state exists server-side.
-// @Summary Disconnect from MAX / cancel QR session
-// @Description Closes connection to MAX servers or cancels an in-progress QR auth session.
-// @Tags Session
-// @Produce json
-// @Success 200 {object} MessageResponse
-// @Security ApiKeyAuth
-// @Router /session/disconnect [post]
 func (s *server) Disconnect() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -616,13 +590,6 @@ func (s *server) Disconnect() http.HandlerFunc {
 }
 
 // Logout logs out from MAX and deletes user
-// @Summary Logout from MAX
-// @Description Logs out from MAX and deletes the user from the system
-// @Tags Session
-// @Produce json
-// @Success 200 {object} MessageResponse
-// @Security ApiKeyAuth
-// @Router /session/logout [post]
 func (s *server) Logout() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -653,13 +620,6 @@ func (s *server) Logout() http.HandlerFunc {
 }
 
 // GetStatus returns connection status
-// @Summary Get connection status
-// @Description Returns connection and authentication status
-// @Tags Session
-// @Produce json
-// @Success 200 {object} StatusResponse
-// @Security ApiKeyAuth
-// @Router /session/status [get]
 func (s *server) GetStatus() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -698,17 +658,6 @@ func (s *server) GetStatus() http.HandlerFunc {
 // as maxUserID: the caller resumes all its connections of it. An account that
 // is not paused answers the same, and nothing changes. The body is optional;
 // captchaKey, which the VK gateway takes, is ignored. No MAX call is made.
-// @Summary Resume sending from a paused account
-// @Description Lifts the pause MAX's limit or restriction errors put on the account. Body optional, captchaKey ignored.
-// @Tags Session
-// @Accept json
-// @Produce json
-// @Param request body ResumeBody false "Ignored captcha answer"
-// @Success 200 {object} ResumeResponse
-// @Failure 400 {object} ErrorResponse "INVALID_INPUT"
-// @Failure 500 {object} ErrorResponse "INTERNAL_ERROR, the account stays paused"
-// @Security ApiKeyAuth
-// @Router /session/resume [post]
 func (s *server) Resume() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -746,15 +695,6 @@ func (s *server) maxUserIDOf(userID string) int64 {
 }
 
 // RequestSync reconnects and returns fresh sync data
-// @Summary Request sync
-// @Description Reconnects to MAX server and returns fresh profile, chats, contacts data. Also sends Sync event to webhook
-// @Tags Session
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} ErrorResponse "No auth token"
-// @Failure 500 {object} ErrorResponse "Sync failed"
-// @Security ApiKeyAuth
-// @Router /session/sync [post]
 func (s *server) RequestSync() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -877,20 +817,6 @@ func lookupFoundNoUser(err error) bool {
 }
 
 // SendMessage sends a text message
-// @Summary Send text message
-// @Description Sends a text message to a chat. Errors carry a delivery outcome code, see API.md
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body MessageBody true "Message data"
-// @Success 200 {object} SendMessageResponse
-// @Failure 400 {object} ErrorResponse "invalid_target or INVALID_INPUT"
-// @Failure 404 {object} ErrorResponse "address_not_found"
-// @Failure 422 {object} ErrorResponse "send_rejected"
-// @Failure 500 {object} ErrorResponse "send_failed"
-// @Failure 503 {object} ErrorResponse "not_connected or lookup_failed"
-// @Security ApiKeyAuth
-// @Router /chat/send/text [post]
 func (s *server) SendMessage() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -999,17 +925,6 @@ func (s *server) SendMessage() http.HandlerFunc {
 }
 
 // SendEditMessage edits an existing message
-// @Summary Edit message
-// @Description Edits an existing message
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body EditMessageBody true "Edit data"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/send/edit [post]
 func (s *server) SendEditMessage() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1048,17 +963,6 @@ func (s *server) SendEditMessage() http.HandlerFunc {
 }
 
 // MarkRead marks messages as read
-// @Summary Mark messages as read
-// @Description Marks messages as read in a chat
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body MarkReadBody true "Mark read data"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/markread [post]
 func (s *server) MarkRead() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1097,17 +1001,6 @@ func (s *server) MarkRead() http.HandlerFunc {
 }
 
 // DeleteMessage deletes messages
-// @Summary Delete messages
-// @Description Deletes messages from a chat
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body DeleteMessageBody true "Delete data"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/delete [post]
 func (s *server) DeleteMessage() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1143,17 +1036,6 @@ func (s *server) DeleteMessage() http.HandlerFunc {
 // ========== MEDIA ENDPOINTS ==========
 
 // SendImage sends an image message
-// @Summary Send image
-// @Description Sends an image message to a chat
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body ImageBody true "Image data"
-// @Success 200 {object} SendMessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/send/image [post]
 func (s *server) SendImage() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1204,17 +1086,6 @@ func (s *server) SendImage() http.HandlerFunc {
 }
 
 // SendDocument sends a document
-// @Summary Send document
-// @Description Sends a document to a chat
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body DocumentBody true "Document data"
-// @Success 200 {object} SendMessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/send/document [post]
 func (s *server) SendDocument() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1269,17 +1140,6 @@ func (s *server) SendDocument() http.HandlerFunc {
 }
 
 // SendAudio sends an audio file
-// @Summary Send audio
-// @Description Sends an audio file to a chat
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body AudioBody true "Audio data"
-// @Success 200 {object} SendMessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/send/audio [post]
 func (s *server) SendAudio() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1334,17 +1194,6 @@ func (s *server) SendAudio() http.HandlerFunc {
 }
 
 // SendVideo sends a video
-// @Summary Send video
-// @Description Sends a video to a chat
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body VideoBody true "Video data"
-// @Success 200 {object} SendMessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/send/video [post]
 func (s *server) SendVideo() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1399,17 +1248,6 @@ func (s *server) SendVideo() http.HandlerFunc {
 }
 
 // DownloadImage downloads an image
-// @Summary Download image
-// @Description Downloads an image from URL
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body DownloadBody true "URL"
-// @Success 200 {object} DownloadMediaResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/downloadimage [post]
 func (s *server) DownloadImage() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1450,17 +1288,6 @@ func (s *server) DownloadImage() http.HandlerFunc {
 }
 
 // DownloadDocument downloads a document by fileId
-// @Summary Download document
-// @Description Downloads a document by file ID
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body DownloadFileBody true "File info"
-// @Success 200 {object} DownloadMediaResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/downloaddocument [post]
 func (s *server) DownloadDocument() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1508,17 +1335,6 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 }
 
 // DownloadVideo downloads a video by videoId
-// @Summary Download video
-// @Description Downloads a video by video ID
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body DownloadFileBody true "Video info"
-// @Success 200 {object} DownloadVideoResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/downloadvideo [post]
 func (s *server) DownloadVideo() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1567,17 +1383,6 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 }
 
 // DownloadAudio downloads audio by fileId (same as document)
-// @Summary Download audio
-// @Description Downloads audio by file ID
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body DownloadBody true "URL"
-// @Success 200 {object} DownloadMediaResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/downloadaudio [post]
 func (s *server) DownloadAudio() http.HandlerFunc {
 	return s.DownloadImage()
 }
@@ -1585,17 +1390,6 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 // ========== USER ENDPOINTS ==========
 
 // CheckUser checks if a phone number exists in MAX
-// @Summary Check user existence
-// @Description Checks if phone numbers exist in MAX. A number whose lookup failed gets exists:false plus an error
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param request body CheckUserBody true "Phone numbers"
-// @Success 200 {object} CheckUserResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /user/check [post]
 func (s *server) CheckUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1648,14 +1442,6 @@ func (s *server) CheckUser() http.HandlerFunc {
 }
 
 // GetContacts returns all contacts
-// @Summary Get contacts
-// @Description Returns all contacts from MAX
-// @Tags User
-// @Produce json
-// @Success 200 {object} ContactsResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /user/contacts [get]
 func (s *server) GetContacts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1684,18 +1470,6 @@ func (s *server) GetContacts() http.HandlerFunc {
 }
 
 // GetUser gets user info by ID or multiple IDs
-// @Summary Get user info
-// @Description Gets user information by MAX user ID. Supports single userId or batch request with userIds array (max 100)
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param request body UserInfoBody true "User ID or IDs array"
-// @Success 200 {object} UserInfoResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /user/info [post]
 func (s *server) GetUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1755,17 +1529,6 @@ func (s *server) GetUser() http.HandlerFunc {
 }
 
 // SendPresence sets presence status
-// @Summary Send presence
-// @Description Sends typing indicator to a chat
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param request body PresenceBody true "Chat ID"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /user/presence [post]
 func (s *server) SendPresence() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1802,17 +1565,6 @@ func (s *server) SendPresence() http.HandlerFunc {
 // ========== GROUP ENDPOINTS ==========
 
 // CreateGroup creates a new group
-// @Summary Create group
-// @Description Creates a new group with specified participants
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body CreateGroupBody true "Group data"
-// @Success 200 {object} GroupChatResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/create [post]
 func (s *server) CreateGroup() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1846,18 +1598,6 @@ func (s *server) CreateGroup() http.HandlerFunc {
 }
 
 // GetGroupInfo gets group info
-// @Summary Get group info
-// @Description Gets group information by chat ID
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body GroupInfoBody true "Chat ID"
-// @Success 200 {object} GroupChatResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/info [post]
 func (s *server) GetGroupInfo() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1891,18 +1631,6 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 }
 
 // GetGroupInviteLink gets group invite link
-// @Summary Get group invite link
-// @Description Gets invite link for a group
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body GroupInfoBody true "Chat ID"
-// @Success 200 {object} InviteLinkResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/invitelink [post]
 func (s *server) GetGroupInviteLink() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1936,17 +1664,6 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 }
 
 // GroupJoin joins a group via invite link
-// @Summary Join group
-// @Description Joins a group via invite link
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body GroupJoinBody true "Invite link"
-// @Success 200 {object} GroupChatResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/join [post]
 func (s *server) GroupJoin() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -1980,17 +1697,6 @@ func (s *server) GroupJoin() http.HandlerFunc {
 }
 
 // GroupLeave leaves a group
-// @Summary Leave group
-// @Description Leaves a group
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body GroupInfoBody true "Chat ID"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/leave [post]
 func (s *server) GroupLeave() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2024,17 +1730,6 @@ func (s *server) GroupLeave() http.HandlerFunc {
 }
 
 // UpdateGroupParticipants adds or removes group members
-// @Summary Update group participants
-// @Description Adds or removes participants from a group
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body UpdateParticipantsBody true "Participants data"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/updateparticipants [post]
 func (s *server) UpdateGroupParticipants() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2074,17 +1769,6 @@ func (s *server) UpdateGroupParticipants() http.HandlerFunc {
 }
 
 // SetGroupName sets group name
-// @Summary Set group name
-// @Description Sets the name of a group
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body GroupNameBody true "Group name"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/name [post]
 func (s *server) SetGroupName() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2118,17 +1802,6 @@ func (s *server) SetGroupName() http.HandlerFunc {
 }
 
 // SetGroupTopic sets group description
-// @Summary Set group topic
-// @Description Sets the topic/description of a group
-// @Tags Group
-// @Accept json
-// @Produce json
-// @Param request body GroupTopicBody true "Group topic"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /group/topic [post]
 func (s *server) SetGroupTopic() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2164,13 +1837,6 @@ func (s *server) SetGroupTopic() http.HandlerFunc {
 // ========== WEBHOOK ENDPOINTS ==========
 
 // GetWebhook returns current webhook
-// @Summary Get webhook
-// @Description Returns current webhook URL
-// @Tags Webhook
-// @Produce json
-// @Success 200 {object} WebhookResponse
-// @Security ApiKeyAuth
-// @Router /webhook [get]
 func (s *server) GetWebhook() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		webhook := r.Context().Value("userinfo").(Values).Get("Webhook")
@@ -2185,16 +1851,6 @@ func (s *server) GetWebhook() http.HandlerFunc {
 }
 
 // SetWebhook sets webhook URL
-// @Summary Set webhook
-// @Description Sets webhook URL for receiving events
-// @Tags Webhook
-// @Accept json
-// @Produce json
-// @Param request body WebhookBody true "Webhook URL"
-// @Success 200 {object} WebhookResponse
-// @Failure 400 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /webhook [post]
 func (s *server) SetWebhook() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2226,28 +1882,11 @@ func (s *server) SetWebhook() http.HandlerFunc {
 }
 
 // UpdateWebhook is alias for SetWebhook
-// @Summary Update webhook
-// @Description Updates webhook URL
-// @Tags Webhook
-// @Accept json
-// @Produce json
-// @Param request body WebhookBody true "Webhook URL"
-// @Success 200 {object} WebhookResponse
-// @Failure 400 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /webhook [put]
 func (s *server) UpdateWebhook() http.HandlerFunc {
 	return s.SetWebhook()
 }
 
 // DeleteWebhook removes webhook
-// @Summary Delete webhook
-// @Description Removes the webhook URL
-// @Tags Webhook
-// @Produce json
-// @Success 200 {object} MessageResponse
-// @Security ApiKeyAuth
-// @Router /webhook [delete]
 func (s *server) DeleteWebhook() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2274,17 +1913,6 @@ func (s *server) DeleteWebhook() http.HandlerFunc {
 // ========== CHAT HISTORY ENDPOINTS ==========
 
 // GetChatHistory gets chat history
-// @Summary Get chat history
-// @Description Gets message history for a chat
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body ChatHistoryBody true "History parameters"
-// @Success 200 {object} ChatHistoryResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/history [post]
 func (s *server) GetChatHistory() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2325,17 +1953,6 @@ func (s *server) GetChatHistory() http.HandlerFunc {
 // ========== REACTIONS ==========
 
 // React adds reaction to message
-// @Summary Add reaction
-// @Description Adds or removes a reaction to a message
-// @Tags Chat
-// @Accept json
-// @Produce json
-// @Param request body ReactBody true "Reaction data"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 503 {object} ErrorResponse
-// @Security ApiKeyAuth
-// @Router /chat/react [post]
 func (s *server) React() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
@@ -2392,14 +2009,6 @@ type userRow struct {
 const userRowQuery = "SELECT id, name, token, max_user_id, webhook, events, connected, COALESCE(auth_token, '') as auth_token FROM users"
 
 // ListUsers lists all users in the system.
-// @Summary List all users
-// @Description Returns every user registered in the system.
-// @Tags Admin
-// @Produce json
-// @Success 200 {object} ListUsersResponse
-// @Failure 500 {object} ErrorResponse
-// @Security AdminAuth
-// @Router /admin/users [get]
 func (s *server) ListUsers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var users []userRow
@@ -2454,18 +2063,6 @@ func maskProxyURL(raw string) string {
 }
 
 // GetUserByID returns a single user by ID.
-// @Summary Get user by ID
-// @Description Returns a single user by their ID. Secrets (auth_token, s3 keys,
-// @Description proxy password) are never returned raw — see UserDetail.
-// @Tags Admin
-// @Produce json
-// @Param userid path string true "User ID"
-// @Success 200 {object} UserDetailResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Security AdminAuth
-// @Router /admin/users/{userid} [get]
 func (s *server) GetUserByID() http.HandlerFunc {
 	const userDetailQuery = `SELECT id, name, token, webhook, max_user_id,
 		COALESCE(auth_token, '') as auth_token, COALESCE(device_id, '') as device_id,
@@ -2533,17 +2130,6 @@ func (s *server) GetUserByID() http.HandlerFunc {
 }
 
 // AddUser creates a new user
-// @Summary Create user
-// @Description Creates a new user in the system
-// @Tags Admin
-// @Accept json
-// @Produce json
-// @Param request body AddUserBody true "User data"
-// @Success 200 {object} AddUserResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Security AdminAuth
-// @Router /admin/users [post]
 func (s *server) AddUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
@@ -2576,18 +2162,6 @@ func (s *server) AddUser() http.HandlerFunc {
 }
 
 // EditUser updates a user
-// @Summary Update user
-// @Description Updates an existing user
-// @Tags Admin
-// @Accept json
-// @Produce json
-// @Param userid path string true "User ID"
-// @Param request body EditUserBody true "User data"
-// @Success 200 {object} MessageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Security AdminAuth
-// @Router /admin/users/{userid} [put]
 func (s *server) EditUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -2617,15 +2191,6 @@ func (s *server) EditUser() http.HandlerFunc {
 }
 
 // DeleteUser deletes a user
-// @Summary Delete user
-// @Description Deletes a user from the system
-// @Tags Admin
-// @Produce json
-// @Param userid path string true "User ID"
-// @Success 200 {object} MessageResponse
-// @Failure 500 {object} ErrorResponse
-// @Security AdminAuth
-// @Router /admin/users/{userid} [delete]
 func (s *server) DeleteUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -2693,13 +2258,6 @@ func decodeMediaData(data string, defaultName string) ([]byte, string, error) {
 // GetHealth reports liveness/readiness for monitoring. Returns 200 with
 // `"status":"ok"` when DB pings; 503 with `"status":"degraded"` otherwise.
 // Intentionally unauthenticated so load balancers and orchestrators can probe.
-// @Summary Health check
-// @Description Liveness + readiness snapshot. Returns 200 when DB pings, 503 otherwise.
-// @Tags Health
-// @Produce json
-// @Success 200 {object} HealthResponse
-// @Failure 503 {object} HealthResponse
-// @Router /health [get]
 func (s *server) GetHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var mem runtime.MemStats

@@ -1,9 +1,7 @@
-.PHONY: swagger build run clean
+.PHONY: build run test clean
 
-swagger:
-	@go tool swag init -g main.go --outputTypes yaml -o . --v3.1
-	@mv swagger.yaml static/api/spec.yml
-	@sed -i '' 's/main\.//g' static/api/spec.yml
+# static/api/spec.yml is written by hand; TestSpecMatchesRoutes checks that
+# it lists exactly the routes of routes.go.
 
 build:
 	go build -o maxapi .
@@ -11,7 +9,8 @@ build:
 run:
 	go run .
 
+test:
+	go build ./... && go vet ./... && go test ./...
+
 clean:
 	rm -f maxapi
-
-all: swagger build

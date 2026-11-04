@@ -24,31 +24,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// @title MaxAPI
-// @version 3.0.0
-// @description MaxAPI implements a multi-user and multi-device REST API for MAX Messenger.
-// @description
-// @description ## Authentication
-// @description - **Standard Endpoints**: Include the `token` header with a valid user token
-// @description - **Admin Endpoints**: Use the `Authorization` header with the admin token (set in .env as MAXAPI_ADMIN_TOKEN)
-// @description
-// @description ## Phone number format
-// @description - Required: Country code (e.g. **79001234567** for Russia)
-// @description - Do not prefix with a plus sign (+)
-
-// @servers.url http://localhost:5555
-// @servers.description Local development server
-
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name token
-// @description User token for authentication
-
-// @securityDefinitions.apikey AdminAuth
-// @in header
-// @name Authorization
-// @description Admin token for admin endpoints
-
 type server struct {
 	db        *sqlx.DB
 	router    *mux.Router

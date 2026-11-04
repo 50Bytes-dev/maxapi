@@ -402,3 +402,9 @@ This project is based on:
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
+
+The API page at `/api/` ships Swagger UI (https://github.com/swagger-api/swagger-ui,
+npm swagger-ui-dist 5.17.14), Copyright 2020-2021 SmartBear Software Inc.,
+licensed under the Apache License, Version 2.0; a copy is in
+[third_party/swagger-ui/LICENSE](third_party/swagger-ui/LICENSE). Its files in
+`static/api/` are unmodified.

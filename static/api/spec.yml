@@ -1,2002 +1,3455 @@
-components:
-  schemas:
-    AddUserBody:
-      properties:
-        events:
-          example: All
-          type: string
-        name:
-          example: John Doe
-          type: string
-        webhook:
-          example: https://example.com/webhook
-          type: string
-      type: object
-    AddUserResponse:
-      description: Response after creating a new user
-      properties:
-        id:
-          example: a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0
-          type: string
-        name:
-          example: John Doe
-          type: string
-        success:
-          example: true
-          type: boolean
-        token:
-          example: abc123def456
-          type: string
-      type: object
-    AudioBody:
-      properties:
-        audio:
-          example: data:audio/mp3;base64,...
-          type: string
-        chatId:
-          example: 123456789
-          type: integer
-        fileName:
-          example: audio.mp3
-          type: string
-        notify:
-          example: true
-          type: boolean
-        phone:
-          example: "79001234567"
-          type: string
-      type: object
-    ChatHistoryBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        count:
-          example: 50
-          type: integer
-        fromTime:
-          example: 0
-          type: integer
-      type: object
-    ChatHistoryResponse:
-      description: Response with chat history messages
-      properties:
-        messages:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-          uniqueItems: false
-        success:
-          example: true
-          type: boolean
-      type: object
-    CheckUserBody:
-      properties:
-        phone:
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-      type: object
-    CheckUserResponse:
-      description: Response with user existence check results
-      properties:
-        success:
-          example: true
-          type: boolean
-        users:
-          items:
-            $ref: '#/components/schemas/CheckUserResultItem'
-          type: array
-          uniqueItems: false
-      type: object
-    CheckUserResultItem:
-      description: Single user check result
-      properties:
-        exists:
-          example: true
-          type: boolean
-        maxUserId:
-          example: 123456789
-          type: integer
-        name:
-          example: John Doe
-          type: string
-        phone:
-          example: "79001234567"
-          type: string
-      type: object
-    ConnectBody:
-      properties:
-        immediate:
-          example: false
-          type: boolean
-        subscribe:
-          example:
-          - Message
-          - ReadReceipt
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-      type: object
-    ContactsResponse:
-      description: Response with list of contacts
-      properties:
-        contacts:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-          uniqueItems: false
-        count:
-          example: 42
-          type: integer
-        success:
-          example: true
-          type: boolean
-      type: object
-    CreateGroupBody:
-      properties:
-        name:
-          example: My Group
-          type: string
-        participants:
-          items:
-            type: integer
-          type: array
-          uniqueItems: false
-      type: object
-    DeleteMessageBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        forMe:
-          example: false
-          type: boolean
-        messageIds:
-          items:
-            type: integer
-          type: array
-          uniqueItems: false
-      type: object
-    DocumentBody:
-      properties:
-        caption:
-          example: Document caption
-          type: string
-        chatId:
-          example: 123456789
-          type: integer
-        document:
-          example: data:application/pdf;base64,...
-          type: string
-        fileName:
-          example: document.pdf
-          type: string
-        notify:
-          example: true
-          type: boolean
-        phone:
-          example: "79001234567"
-          type: string
-      type: object
-    DownloadBody:
-      properties:
-        url:
-          example: https://example.com/image.jpg
-          type: string
-      type: object
-    DownloadFileBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        fileId:
-          example: 111222333
-          type: integer
-        messageId:
-          example: 987654321
-          type: integer
-        videoId:
-          example: 111222333
-          type: integer
-      type: object
-    DownloadMediaResponse:
-      description: Response with downloaded media data
-      properties:
-        data:
-          example: base64_encoded_data
-          type: string
-        mimeType:
-          example: image/jpeg
-          type: string
-        success:
-          example: true
-          type: boolean
-      type: object
-    DownloadVideoResponse:
-      description: Response with downloaded video data
-      properties:
-        data:
-          example: base64_encoded_data
-          type: string
-        mimeType:
-          example: video/mp4
-          type: string
-        success:
-          example: true
-          type: boolean
-        url:
-          example: https://example.com/video.mp4
-          type: string
-      type: object
-    EditMessageBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        messageId:
-          example: 987654321
-          type: integer
-        text:
-          example: Updated message
-          type: string
-      type: object
-    EditUserBody:
-      properties:
-        events:
-          example: All
-          type: string
-        name:
-          example: John Doe
-          type: string
-        webhook:
-          example: https://example.com/webhook
-          type: string
-      type: object
-    ErrorResponse:
-      description: Error response format. `code` is a stable machine-readable constant
-        (e.g. INVALID_INPUT, NOT_FOUND, AUTH_EXPIRED); `error` is a free-form human
-        description.
-      properties:
-        code:
-          example: INVALID_INPUT
-          type: string
-        error:
-          example: error message
-          type: string
-        success:
-          example: false
-          type: boolean
-      type: object
-    GroupChatResponse:
-      description: Response with group or chat information
-      properties:
-        chat:
-          additionalProperties: {}
-          type: object
-        success:
-          example: true
-          type: boolean
-      type: object
-    GroupInfoBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-      type: object
-    GroupJoinBody:
-      properties:
-        link:
-          example: https://max.ru/join/abc123
-          type: string
-      type: object
-    GroupNameBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        name:
-          example: New Group Name
-          type: string
-      type: object
-    GroupTopicBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        topic:
-          example: Group description
-          type: string
-      type: object
-    HealthResponse:
-      description: Snapshot of process + connection health.
-      properties:
-        connected_users:
-          example: 42
-          type: integer
-        db_ok:
-          example: true
-          type: boolean
-        goroutines:
-          example: 87
-          type: integer
-        mem_alloc_mb:
-          example: 67
-          type: integer
-        rabbitmq_ok:
-          example: true
-          type: boolean
-        status:
-          example: ok
-          type: string
-        success:
-          example: true
-          type: boolean
-        timestamp:
-          example: 1700000000
-          type: integer
-        uptime_seconds:
-          example: 12345
-          type: integer
-        version:
-          example: 2.0.0-max
-          type: string
-      type: object
-    ImageBody:
-      properties:
-        caption:
-          example: Image caption
-          type: string
-        chatId:
-          example: 123456789
-          type: integer
-        image:
-          example: data:image/jpeg;base64,...
-          type: string
-        notify:
-          example: true
-          type: boolean
-        phone:
-          example: "79001234567"
-          type: string
-      type: object
-    InviteLinkResponse:
-      description: Response with group invite link
-      properties:
-        inviteLink:
-          example: https://max.ru/join/abc123
-          type: string
-        success:
-          example: true
-          type: boolean
-      type: object
-    ListUsersResponse:
-      description: Response with list of users
-      properties:
-        data:
-          items:
-            $ref: '#/components/schemas/UserResponse'
-          type: array
-          uniqueItems: false
-        success:
-          example: true
-          type: boolean
-      type: object
-    MarkReadBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        messageId:
-          example: 987654321
-          type: integer
-      type: object
-    MessageBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        notify:
-          example: true
-          type: boolean
-        phone:
-          example: "79001234567"
-          type: string
-        replyTo:
-          example: 0
-          type: integer
-        text:
-          example: Hello, World!
-          type: string
-      type: object
-    MessageResponse:
-      description: Simple success response with message
-      properties:
-        message:
-          example: Operation completed
-          type: string
-        success:
-          example: true
-          type: boolean
-      type: object
-    PresenceBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-      type: object
-    QRCodeResponse:
-      description: Current QR code for an in-progress auth session.
-      properties:
-        qrcode:
-          example: data:image/png;base64,...
-          type: string
-        success:
-          example: true
-          type: boolean
-      type: object
-    ReactBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        messageId:
-          example: "987654321"
-          type: string
-        reaction:
-          example: "\U0001F44D"
-          type: string
-      type: object
-    SendMessageResponse:
-      description: Response after sending a message
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        messageId:
-          example: 987654321
-          type: integer
-        success:
-          example: true
-          type: boolean
-      type: object
-    StatusResponse:
-      description: Connection and authentication status
-      properties:
-        authenticated:
-          example: true
-          type: boolean
-        connected:
-          example: true
-          type: boolean
-        loggedIn:
-          example: true
-          type: boolean
-        maxUserID:
-          example: 123456789
-          type: integer
-        success:
-          example: true
-          type: boolean
-      type: object
-    UpdateParticipantsBody:
-      properties:
-        chatId:
-          example: 123456789
-          type: integer
-        operation:
-          enum:
-          - add
-          - remove
-          example: add
-          type: string
-        userIds:
-          items:
-            type: integer
-          type: array
-          uniqueItems: false
-      type: object
-    UserDetail:
-      description: Detailed user record with secrets masked.
-      properties:
-        auth_configured:
-          example: true
-          type: boolean
-        connected:
-          example: true
-          type: boolean
-        connected_flag:
-          example: true
-          type: boolean
-        device_id:
-          example: 6e8ed92f-...
-          type: string
-        events:
-          example:
-          - Message
-          - ReadReceipt
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        history:
-          example: 100
-          type: integer
-        id:
-          example: a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0
-          type: string
-        max_user_id:
-          example: 123456789
-          type: integer
-        media_delivery:
-          example: base64
-          type: string
-        name:
-          example: John Doe
-          type: string
-        proxy_configured:
-          example: false
-          type: boolean
-        proxy_url:
-          example: http://user:***@proxy.internal:3128
-          type: string
-        s3_bucket:
-          example: ""
-          type: string
-        s3_enabled:
-          example: false
-          type: boolean
-        s3_endpoint:
-          example: ""
-          type: string
-        s3_region:
-          example: ""
-          type: string
-        token:
-          example: abc123def456
-          type: string
-        webhook:
-          example: https://example.com/webhook
-          type: string
-      type: object
-    UserDetailResponse:
-      description: GET /admin/users/{userid} response envelope.
-      properties:
-        data:
-          $ref: '#/components/schemas/UserDetail'
-        success:
-          example: true
-          type: boolean
-      type: object
-    UserInfoBody:
-      properties:
-        userIds:
-          items:
-            type: integer
-          type: array
-          uniqueItems: false
-      type: object
-    UserInfoResponse:
-      description: Response with user information (always returns array)
-      properties:
-        count:
-          example: 1
-          type: integer
-        success:
-          example: true
-          type: boolean
-        users:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-          uniqueItems: false
-      type: object
-    UserResponse:
-      description: Summary fields for a user in the system
-      properties:
-        authenticated:
-          example: true
-          type: boolean
-        connected:
-          example: 1
-          type: integer
-        events:
-          example: All
-          type: string
-        id:
-          example: a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0
-          type: string
-        maxUserId:
-          example: 123456789
-          type: integer
-        name:
-          example: John Doe
-          type: string
-        token:
-          example: abc123def456
-          type: string
-        webhook:
-          example: https://example.com/webhook
-          type: string
-      type: object
-    VideoBody:
-      properties:
-        caption:
-          example: Video caption
-          type: string
-        chatId:
-          example: 123456789
-          type: integer
-        fileName:
-          example: video.mp4
-          type: string
-        notify:
-          example: true
-          type: boolean
-        phone:
-          example: "79001234567"
-          type: string
-        video:
-          example: data:video/mp4;base64,...
-          type: string
-      type: object
-    WebhookBody:
-      properties:
-        webhook:
-          example: https://example.com/webhook
-          type: string
-      type: object
-    WebhookResponse:
-      description: Response with webhook URL
-      properties:
-        success:
-          example: true
-          type: boolean
-        webhook:
-          example: https://example.com/webhook
-          type: string
-      type: object
-  securitySchemes:
-    AdminAuth:
-      description: Admin token for admin endpoints
-      in: header
-      name: Authorization
-      type: apiKey
-    ApiKeyAuth:
-      description: User token for authentication
-      in: header
-      name: token
-      type: apiKey
-externalDocs:
-  description: ""
-  url: ""
+openapi: 3.1.0
 info:
+  title: MaxAPI
+  version: 4.0.0
   description: |-
-    MaxAPI implements a multi-user and multi-device REST API for MAX Messenger.
+    maxapi holds logins into MAX Messenger accounts and exposes them over REST:
+    sending text and media, reading history, contacts and groups, and webhook
+    events. The owner logs in by scanning a QR code in the MAX app. When MAX
+    answers a send with a limit or restriction error, the gateway pauses
+    sending from that MAX account until the owner resumes it.
+
+    This schema describes maxapi 1.5.0. `API.md` in the repository is the full
+    contract; where the two disagree, the code is right.
 
     ## Authentication
-    - **Standard Endpoints**: Include the `token` header with a valid user token
-    - **Admin Endpoints**: Use the `Authorization` header with the admin token (set in .env as MAXAPI_ADMIN_TOKEN)
+    - **Admin endpoints** (`/admin/*`): header `Authorization` with the raw admin
+      token (`MAXAPI_ADMIN_TOKEN` or `-admintoken`), without `Bearer`.
+    - **Account endpoints** (`/session/*`, `/chat/*`, `/user/*`, `/group/*`,
+      `/webhook`): header `token` with the account token returned by
+      `POST /admin/users`. A `?token=` query parameter is accepted too when the
+      header is absent.
+    - `/health` takes no authentication.
 
-    ## Phone number format
-    - Required: Country code (e.g. **79001234567** for Russia)
-    - Do not prefix with a plus sign (+)
-  title: MaxAPI
-  version: 3.0.0
-openapi: 3.1.0
+    A missing or unknown token answers `401` `{"success": false, "error": "unauthorized"}`
+    without `code`. Account tokens are cached in memory: after
+    `DELETE /admin/users/{userid}` a token that was used before keeps passing
+    authentication until the gateway restarts (the calls then find no account
+    row); `LoggedOut` and `POST /session/logout` drop it from the cache at once.
+
+    ## Errors
+    Every error body is `ErrorResponse` (`success` false, `error`). Only
+    `POST /chat/send/text`, `POST /session/resume` and
+    `GET /admin/users/{userid}` add a machine `code`; elsewhere tell errors apart
+    by the HTTP status and never by `error`. A required body that is missing or
+    not JSON answers `400`.
+
+    ## Webhooks
+    Events go to the account's webhook (see `webhooks` below) as JSON when the
+    gateway runs with `WEBHOOK_FORMAT=json`, otherwise as a form
+    (`application/x-www-form-urlencoded`) with the same fields and nested
+    values JSON-encoded. The same body also goes to the global webhook
+    (`-globalwebhook`) and to RabbitMQ (plus `serverHost`) when configured.
+
+    ## Phone numbers
+    With country code, digits only, e.g. **79001234567**. The gateway passes the
+    string to MAX as given.
+  license:
+    name: MIT
+externalDocs:
+  description: maxapi on GitHub (API.md is the full contract)
+  url: https://github.com/50Bytes-dev/maxapi
+servers:
+- description: This gateway (the one serving this schema)
+  url: /
+tags:
+- name: admin
+  description: Gateway accounts (admin token)
+- name: session
+  description: QR login, connection, status and pause of an account
+- name: chat
+  description: Sending, editing and deleting messages, history, media downloads
+- name: user
+  description: MAX users and contacts
+- name: group
+  description: MAX group chats
+- name: webhook
+  description: The account's webhook URL
+- name: health
+  description: Liveness of the gateway
 paths:
-  /admin/users:
+  /health:
     get:
-      description: Returns every user registered in the system.
+      operationId: getHealth
+      summary: Gateway health
+      description: Answers 200 when the database answers a ping, 503 otherwise. MAX is not checked.
+      tags:
+      - health
+      security: []
       responses:
         "200":
+          description: The gateway and its database are up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        "503":
+          description: The database does not answer (`success` false, `status` degraded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /admin/users:
+    get:
+      operationId: listUsers
+      summary: List the accounts
+      description: Every gateway account, ordered by id, with its token. Secrets of the MAX login are not shown.
+      tags:
+      - admin
+      security:
+      - AdminAuth: []
+      responses:
+        "200":
+          description: The accounts
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListUsersResponse'
-          description: OK
+        "401":
+          $ref: '#/components/responses/AdminUnauthorized'
         "500":
+          description: Database error (no `code`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
+    post:
+      operationId: addUser
+      summary: Create an account
+      description: |-
+        Creates a gateway account and returns its id and account token. Nothing
+        is validated. The account has no MAX login yet: `POST /session/connect`
+        starts the QR login.
+      tags:
+      - admin
       security:
       - AdminAuth: []
-      summary: List all users
-      tags:
-      - Admin
-    post:
-      description: Creates a new user in the system
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AddUserBody'
-        description: User data
-        required: true
       responses:
         "200":
+          description: The account is created
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AddUserResponse'
-          description: OK
         "400":
+          description: The body is missing or not JSON (no `code`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
+        "401":
+          $ref: '#/components/responses/AdminUnauthorized'
         "500":
+          description: Database error (no `code`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
-      security:
-      - AdminAuth: []
-      summary: Create user
-      tags:
-      - Admin
   /admin/users/{userid}:
-    delete:
-      description: Deletes a user from the system
-      parameters:
-      - description: User ID
-        in: path
-        name: userid
-        required: true
-        schema:
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
-      security:
-      - AdminAuth: []
-      summary: Delete user
-      tags:
-      - Admin
+    parameters:
+    - name: userid
+      in: path
+      required: true
+      description: The account id from `POST /admin/users`
+      schema:
+        type: string
     get:
+      operationId: getUser
+      summary: Get an account
       description: |-
-        Returns a single user by their ID. Secrets (auth_token, s3 keys,
-        proxy password) are never returned raw — see UserDetail.
-      parameters:
-      - description: User ID
-        in: path
-        name: userid
-        required: true
-        schema:
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserDetailResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Not Found
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
+        One account with its settings. The MAX auth token is never shown, only
+        whether one is stored (`auth_configured`); S3 keys are omitted and the
+        proxy password is masked. The body is the account itself, without
+        `success` or `data`.
+      tags:
+      - admin
       security:
       - AdminAuth: []
-      summary: Get user by ID
-      tags:
-      - Admin
+      responses:
+        "200":
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetail'
+        "401":
+          $ref: '#/components/responses/AdminUnauthorized'
+        "404":
+          description: '`NOT_FOUND`: no account with this id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: '`INTERNAL_ERROR`: database error'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     put:
-      description: Updates an existing user
-      parameters:
-      - description: User ID
-        in: path
-        name: userid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EditUserBody'
-        description: User data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
+      operationId: updateUser
+      summary: Update an account
+      description: |-
+        Overwrites `name`, `webhook` and `events` with the body's values, an
+        absent field with "". Succeeds for an unknown id too. A token used since
+        the last restart keeps its cached webhook and events until a restart or
+        until the account itself sets them (`POST /webhook`,
+        `POST /session/connect`).
+      tags:
+      - admin
       security:
       - AdminAuth: []
-      summary: Update user
-      tags:
-      - Admin
-  /chat/delete:
-    post:
-      description: Deletes messages from a chat
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DeleteMessageBody'
-        description: Delete data
-        required: true
+              $ref: '#/components/schemas/UpdateUserBody'
       responses:
         "200":
+          description: Updated (`message` "User updated")
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
-          description: OK
         "400":
+          description: The body is missing or not JSON (no `code`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Delete messages
-      tags:
-      - Chat
-  /chat/downloadaudio:
-    post:
-      description: Downloads audio by file ID
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DownloadBody'
-        description: URL
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadMediaResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Download audio
-      tags:
-      - Chat
-  /chat/downloaddocument:
-    post:
-      description: Downloads a document by file ID
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DownloadFileBody'
-        description: File info
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadMediaResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Download document
-      tags:
-      - Chat
-  /chat/downloadimage:
-    post:
-      description: Downloads an image from URL
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DownloadBody'
-        description: URL
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadMediaResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
+        "401":
+          $ref: '#/components/responses/AdminUnauthorized'
         "500":
+          description: Database error (no `code`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
-      security:
-      - ApiKeyAuth: []
-      summary: Download image
+    delete:
+      operationId: deleteUser
+      summary: Delete an account
+      description: |-
+        Stops the account's MAX session and deletes the account with its MAX
+        login and phone lookup cache. Succeeds for an unknown id too. No webhook
+        is sent, and the session is not logged out in MAX (`POST /session/logout`
+        does that). A pause of its MAX account stays. A token used since the last
+        restart keeps passing authentication until a restart (see the
+        description at the top).
       tags:
-      - Chat
-  /chat/downloadvideo:
-    post:
-      description: Downloads a video by video ID
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DownloadFileBody'
-        description: Video info
-        required: true
+      - admin
+      security:
+      - AdminAuth: []
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadVideoResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Download video
-      tags:
-      - Chat
-  /chat/history:
-    post:
-      description: Gets message history for a chat
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChatHistoryBody'
-        description: History parameters
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChatHistoryResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Get chat history
-      tags:
-      - Chat
-  /chat/markread:
-    post:
-      description: Marks messages as read in a chat
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MarkReadBody'
-        description: Mark read data
-        required: true
-      responses:
-        "200":
+          description: The account is deleted (`message` "User deleted")
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Mark messages as read
-      tags:
-      - Chat
-  /chat/react:
-    post:
-      description: Adds or removes a reaction to a message
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReactBody'
-        description: Reaction data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Add reaction
-      tags:
-      - Chat
-  /chat/send/audio:
-    post:
-      description: Sends an audio file to a chat
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AudioBody'
-        description: Audio data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendMessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Send audio
-      tags:
-      - Chat
-  /chat/send/document:
-    post:
-      description: Sends a document to a chat
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DocumentBody'
-        description: Document data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendMessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Send document
-      tags:
-      - Chat
-  /chat/send/edit:
-    post:
-      description: Edits an existing message
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EditMessageBody'
-        description: Edit data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Edit message
-      tags:
-      - Chat
-  /chat/send/image:
-    post:
-      description: Sends an image message to a chat
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ImageBody'
-        description: Image data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendMessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Send image
-      tags:
-      - Chat
-  /chat/send/text:
-    post:
-      description: Sends a text message to a chat. Errors carry a delivery outcome
-        code, see API.md
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MessageBody'
-        description: Message data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendMessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: invalid_target or INVALID_INPUT
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: address_not_found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: send_rejected
+        "401":
+          $ref: '#/components/responses/AdminUnauthorized'
         "500":
+          description: Database error (no `code`); the account stays
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: send_failed
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: not_connected or lookup_failed
-      security:
-      - ApiKeyAuth: []
-      summary: Send text message
-      tags:
-      - Chat
-  /chat/send/video:
-    post:
-      description: Sends a video to a chat
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VideoBody'
-        description: Video data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendMessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Send video
-      tags:
-      - Chat
-  /group/create:
-    post:
-      description: Creates a new group with specified participants
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateGroupBody'
-        description: Group data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GroupChatResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Create group
-      tags:
-      - Group
-  /group/info:
-    post:
-      description: Gets group information by chat ID
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GroupInfoBody'
-        description: Chat ID
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GroupChatResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Not Found
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Get group info
-      tags:
-      - Group
-  /group/invitelink:
-    post:
-      description: Gets invite link for a group
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GroupInfoBody'
-        description: Chat ID
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InviteLinkResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Not Found
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Get group invite link
-      tags:
-      - Group
-  /group/join:
-    post:
-      description: Joins a group via invite link
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GroupJoinBody'
-        description: Invite link
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GroupChatResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Join group
-      tags:
-      - Group
-  /group/leave:
-    post:
-      description: Leaves a group
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GroupInfoBody'
-        description: Chat ID
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Leave group
-      tags:
-      - Group
-  /group/name:
-    post:
-      description: Sets the name of a group
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GroupNameBody'
-        description: Group name
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Set group name
-      tags:
-      - Group
-  /group/topic:
-    post:
-      description: Sets the topic/description of a group
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GroupTopicBody'
-        description: Group topic
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Set group topic
-      tags:
-      - Group
-  /group/updateparticipants:
-    post:
-      description: Adds or removes participants from a group
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateParticipantsBody'
-        description: Participants data
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Update group participants
-      tags:
-      - Group
-  /health:
-    get:
-      description: Liveness + readiness snapshot. Returns 200 when DB pings, 503 otherwise.
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-          description: OK
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-          description: Service Unavailable
-      summary: Health check
-      tags:
-      - Health
   /session/connect:
     post:
-      description: Kicks off a QR auth session when no auth token is stored, or reconnects
-        with saved credentials. Poll GET /session/qr for the rendered QR code.
+      operationId: connect
+      summary: Connect the account to MAX
+      description: |-
+        Overwrites the event subscription, then: without a stored MAX login,
+        starts a QR login (`details` "Awaiting QR scan", webhook `QRGenerated`;
+        read the QR from `GET /session/qr`); with a stored login and no session,
+        logs in with it (`details` "Connected to MAX", webhook `Sync`); with the
+        session already up, changes nothing else (`alreadyConnected` true and the
+        account's pause). The MAX account id is not in this answer: read it from
+        `GET /session/status` or the `Sync` event.
+      tags:
+      - session
+      security:
+      - ApiKeyAuth: []
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ConnectBody'
-        description: Connection options
-        required: true
       responses:
         "200":
+          description: A QR login started, the stored login is being used, or the session was already up
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
+                $ref: '#/components/schemas/ConnectResponse'
         "400":
+          description: The body is missing or not JSON (no `code`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
+        "401":
+          $ref: '#/components/responses/Unauthorized'
         "500":
+          description: |-
+            No `code`. A database error; the QR login could not be started (no
+            connection to MAX, MAX refused it); or, with `immediate` false, the
+            session was not up after 5 s ("failed to connect"; the login goes on
+            in the background).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
-      security:
-      - ApiKeyAuth: []
-      summary: Open a MAX session (QR or token-based)
-      tags:
-      - Session
-  /session/disconnect:
-    post:
-      description: Closes connection to MAX servers or cancels an in-progress QR auth
-        session.
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-      security:
-      - ApiKeyAuth: []
-      summary: Disconnect from MAX / cancel QR session
-      tags:
-      - Session
-  /session/logout:
-    post:
-      description: Logs out from MAX and deletes the user from the system
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-          description: OK
-      security:
-      - ApiKeyAuth: []
-      summary: Logout from MAX
-      tags:
-      - Session
   /session/qr:
     get:
-      description: Returns the QR code stored server-side for an in-progress auth
-        session.
+      operationId: getQr
+      summary: Get the QR of the running login
+      description: |-
+        The QR of the running QR login as a PNG data URL. The gateway issues a
+        new QR when MAX's expires (webhook `QRGenerated`), so poll it every few
+        seconds while it is shown. There is no `scanned` flag: the scan arrives
+        as `QRScanned`, the login as `QRAuthorized` and `Sync`.
+      tags:
+      - session
+      security:
+      - ApiKeyAuth: []
       responses:
         "200":
+          description: The login waits for a scan
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/QRCodeResponse'
-          description: OK
+                $ref: '#/components/schemas/QRResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
         "500":
+          description: |-
+            No `code`. "no session": neither a QR login nor a session is up.
+            "already logged in": a session is up and a MAX login is stored. Also
+            a database error while reading the account.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Internal Server Error
+  /session/disconnect:
+    post:
+      operationId: disconnect
+      summary: Disconnect the account
+      description: |-
+        Cancels the running QR login, or closes the MAX session and stops its
+        reconnects. The stored MAX login stays: the next connect reuses it. The
+        session is not logged out in MAX, and no webhook is sent. No body is
+        read.
+      tags:
+      - session
       security:
       - ApiKeyAuth: []
-      summary: Get current QR code
-      tags:
-      - Session
-  /session/status:
-    get:
-      description: Returns connection and authentication status
       responses:
         "200":
+          description: Disconnected (`message` "Disconnected")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/AccountLookupError'
+  /session/logout:
+    post:
+      operationId: logout
+      summary: Log out of MAX and delete the account
+      description: |-
+        Logs the session out in MAX (when it is up), stops the reconnects and
+        deletes the gateway account with its MAX login and phone lookup cache;
+        the token answers 401 from now on. No webhook is sent for it. A pause of
+        its MAX account stays. No body is read.
+      tags:
+      - session
+      security:
+      - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Logged out and deleted (`message` "Logged out")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/AccountLookupError'
+  /session/status:
+    get:
+      operationId: getStatus
+      summary: Get the account's MAX session
+      description: |-
+        Reports the session, the stored login and the pause of the MAX account.
+        No MAX call. Read `paused` before `connected`: a paused account keeps
+        its session.
+      tags:
+      - session
+      security:
+      - ApiKeyAuth: []
+      responses:
+        "200":
+          description: The account's status
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
-          description: OK
-      security:
-      - ApiKeyAuth: []
-      summary: Get connection status
-      tags:
-      - Session
-  /session/sync:
-    post:
-      description: Reconnects to MAX server and returns fresh profile, chats, contacts
-        data. Also sends Sync event to webhook
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                additionalProperties: {}
-                type: object
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: No auth token
+        "401":
+          $ref: '#/components/responses/Unauthorized'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Sync failed
+          $ref: '#/components/responses/AccountLookupError'
+  /session/resume:
+    post:
+      operationId: resume
+      summary: Resume sending from the account
+      description: |-
+        Lifts the pause of the MAX account this account is logged into (the
+        live session's, or the one stored at the last login), for every gateway
+        account logged into it; `maxUserID` names the MAX account. An account
+        that is not paused, or whose MAX account is unknown, answers the same.
+        The body is optional. No MAX call.
+      tags:
+      - session
       security:
       - ApiKeyAuth: []
-      summary: Request sync
-      tags:
-      - Session
-  /user/check:
-    post:
-      description: Checks if phone numbers exist in MAX. A number whose lookup failed
-        gets exists:false plus an error
       requestBody:
+        required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CheckUserBody'
-        description: Phone numbers
-        required: true
+              $ref: '#/components/schemas/ResumeBody'
       responses:
         "200":
+          description: The MAX account is not paused any more
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CheckUserResponse'
-          description: OK
+                $ref: '#/components/schemas/ResumeResponse'
         "400":
+          description: '`INVALID_INPUT`: the body is not JSON'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "503":
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: '`INTERNAL_ERROR`: database error; the account stays paused. Also a database error while reading the account (no `code`).'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
+  /session/sync:
+    post:
+      operationId: sync
+      summary: Log in again and return MAX's login data
+      description: |-
+        Closes the session and logs in again with the stored MAX login, then
+        answers with MAX's login data (profile, chats, contacts, ...) and sends
+        a `Sync` event with `manual` true. A failed login stops the session: it
+        is not retried. No body is read.
+      tags:
+      - session
       security:
       - ApiKeyAuth: []
-      summary: Check user existence
-      tags:
-      - User
-  /user/contacts:
-    get:
-      description: Returns all contacts from MAX
       responses:
         "200":
+          description: Logged in again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        "400":
+          description: No MAX login is stored (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: The login failed ("sync failed", no `code`), or a database error while reading the account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /webhook:
+    get:
+      operationId: getWebhook
+      summary: Get the webhook URL
+      description: The account's webhook URL as the gateway currently uses it.
+      tags:
+      - webhook
+      security:
+      - ApiKeyAuth: []
+      responses:
+        "200":
+          description: The webhook URL ("" when none)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/AccountLookupError'
+    post:
+      operationId: setWebhook
+      summary: Set the webhook URL
+      description: Stores the URL the account's events go to; "" sends none.
+      tags:
+      - webhook
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookBody'
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+        "400":
+          description: The body is missing or not JSON (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: Database error (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      operationId: updateWebhook
+      summary: Set the webhook URL (the same as POST)
+      description: The same as `POST /webhook`.
+      tags:
+      - webhook
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookBody'
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+        "400":
+          description: The body is missing or not JSON (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: Database error (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: deleteWebhook
+      summary: Remove the webhook URL
+      description: Sets the webhook URL to ""; no events are sent from now on.
+      tags:
+      - webhook
+      security:
+      - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Removed (`message` "Webhook deleted")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: Database error (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /chat/send/text:
+    post:
+      operationId: sendText
+      summary: Send a text message
+      description: |-
+        Sends a text from the account to a chat, or to a person by phone. Every
+        error carries a delivery outcome `code`: only `send_failed` (500) means
+        the message may have arrived; every other error means nothing was sent.
+        The checks run in this order: session, body, target, pause, lookup
+        (cache, then MAX), send. Answers within ~9.5 s (lookup at most 4 s, the
+        send's acknowledgement at most 5 s).
+
+        A phone lookup's answer is cached per account: a found contact for 90
+        days, MAX's `not.found` for 30 days. A MAX error on the lookup or the
+        send whose code contains `restricted`, `limit`, `too.many`, `flood` or
+        `spam` pauses the MAX account (`paused`, `pauseReason`); while paused
+        every send of every gateway account of it answers 422 `send_rejected`
+        without a MAX call, until `POST /session/resume`.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendTextBody'
+      responses:
+        "200":
+          description: MAX accepted the message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        "400":
+          description: 'Not sent. `invalid_target`: neither `chatId` nor `phone` given. `INVALID_INPUT`: the body is missing or not JSON.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: |-
+            `address_not_found`: not sent. `phone` is malformed, MAX has no user
+            with it (`upstreamCode` "not.found" when MAX said so), or the lookup
+            cache holds MAX's `not.found` younger than 30 days (no MAX call, no
+            `upstreamCode`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: |-
+            `send_rejected`: not sent. MAX refused the send (`upstreamCode`; a
+            limit or restriction code also pauses the account: `paused`,
+            `pauseReason`), or the account is paused (`paused`, `pauseReason`,
+            no `upstreamCode`, no MAX call).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: |-
+            `send_failed`: the outcome is unknown, MAX may have delivered the
+            message (no answer in time, or the session was lost after the send
+            went out); never resend it automatically. Also a database error while
+            reading the account (no `code`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: |-
+            Not sent. `not_connected`: no live MAX session. `lookup_failed`: the
+            phone lookup timed out, lost its connection or MAX answered it with
+            an error other than `not.found` (`upstreamCode`; a limit or
+            restriction code also pauses the account: `paused`, `pauseReason`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /chat/send/image:
+    post:
+      operationId: sendImage
+      summary: Send an image
+      description: |-
+        Uploads an image to MAX and sends it with an optional caption. Errors
+        carry no `code`; a 500 leaves the outcome unknown. The pause and the
+        lookup cache of `POST /chat/send/text` do not apply here.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendImageBody'
+      responses:
+        "200":
+          description: MAX accepted the message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMediaResponse'
+        "400":
+          $ref: '#/components/responses/MediaBadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MediaSendFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/send/audio:
+    post:
+      operationId: sendAudio
+      summary: Send an audio file
+      description: |-
+        Uploads an audio file to MAX and sends it as a file. Errors carry no
+        `code`; a 500 leaves the outcome unknown. The pause and the lookup cache
+        of `POST /chat/send/text` do not apply here.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAudioBody'
+      responses:
+        "200":
+          description: MAX accepted the message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMediaResponse'
+        "400":
+          $ref: '#/components/responses/MediaBadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MediaSendFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/send/document:
+    post:
+      operationId: sendDocument
+      summary: Send a document
+      description: |-
+        Uploads a file to MAX and sends it with an optional caption. Errors
+        carry no `code`; a 500 leaves the outcome unknown. The pause and the
+        lookup cache of `POST /chat/send/text` do not apply here.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendDocumentBody'
+      responses:
+        "200":
+          description: MAX accepted the message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMediaResponse'
+        "400":
+          $ref: '#/components/responses/MediaBadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MediaSendFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/send/video:
+    post:
+      operationId: sendVideo
+      summary: Send a video
+      description: |-
+        Uploads a video to MAX and sends it with an optional caption. Errors
+        carry no `code`; a 500 leaves the outcome unknown. The pause and the
+        lookup cache of `POST /chat/send/text` do not apply here.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendVideoBody'
+      responses:
+        "200":
+          description: MAX accepted the message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMediaResponse'
+        "400":
+          $ref: '#/components/responses/MediaBadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MediaSendFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/send/edit:
+    post:
+      operationId: editMessage
+      summary: Edit a message
+      description: Replaces the text of a message the account sent.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditMessageBody'
+      responses:
+        "200":
+          description: Edited (`message` "Message edited")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "400":
+          description: The body is missing or not JSON, or `chatId` or `messageId` is 0 (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/delete:
+    post:
+      operationId: deleteMessages
+      summary: Delete messages
+      description: Deletes messages of a chat, for everyone or (`forMe`) only for the account.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteMessagesBody'
+      responses:
+        "200":
+          description: Deleted (`message` "Messages deleted")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/react:
+    post:
+      operationId: react
+      summary: Set or remove a reaction
+      description: Sets the account's reaction to a message; an empty `reaction` removes it.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReactBody'
+      responses:
+        "200":
+          description: Done (`message` "Reaction updated")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/markread:
+    post:
+      operationId: markRead
+      summary: Mark a chat read
+      description: Marks the chat read up to the given message.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkReadBody'
+      responses:
+        "200":
+          description: Done (`message` "Marked as read")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "400":
+          description: The body is missing or not JSON, or `chatId` or `messageId` is 0 (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/history:
+    post:
+      operationId: getChatHistory
+      summary: Get a chat's messages
+      description: Messages of a chat before `fromTime`, as MAX gives them.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatHistoryBody'
+      responses:
+        "200":
+          description: The messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/downloadimage:
+    post:
+      operationId: downloadImage
+      summary: Download a file by URL
+      description: |-
+        The gateway fetches `url` itself (30 s timeout, any host) and returns
+        the bytes in base64. Needs no MAX session.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadUrlBody'
+      responses:
+        "200":
+          description: The file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadMediaResponse'
+        "400":
+          description: The body is missing or not JSON, or `url` is empty (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: The download failed (no `code`), or a database error while reading the account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /chat/downloadaudio:
+    post:
+      operationId: downloadAudio
+      summary: Download a file by URL (the same as downloadimage)
+      description: The same as `POST /chat/downloadimage`, for an audio attachment's `audioUrl`.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadUrlBody'
+      responses:
+        "200":
+          description: The file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadMediaResponse'
+        "400":
+          description: The body is missing or not JSON, or `url` is empty (no `code`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: The download failed (no `code`), or a database error while reading the account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /chat/downloaddocument:
+    post:
+      operationId: downloadDocument
+      summary: Download a file attachment
+      description: Asks MAX for the download URL of a file attachment, downloads it and returns the bytes in base64.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadDocumentBody'
+      responses:
+        "200":
+          description: The file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadMediaResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: MAX gave no download URL, or the download failed (no `code`); or a database error while reading the account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/downloadvideo:
+    post:
+      operationId: downloadVideo
+      summary: Download a video attachment
+      description: Asks MAX for the download URL of a video attachment, downloads it and returns the bytes in base64 and the URL.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadVideoBody'
+      responses:
+        "200":
+          description: The video
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadVideoResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          description: MAX gave no download URL, or the download failed (no `code`); or a database error while reading the account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /user/contacts:
+    get:
+      operationId: getContacts
+      summary: Get the account's contacts
+      description: The account's MAX contact list, asked from MAX on every call.
+      tags:
+      - user
+      security:
+      - ApiKeyAuth: []
+      responses:
+        "200":
+          description: The contacts
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContactsResponse'
-          description: OK
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
         "503":
+          $ref: '#/components/responses/NotConnected'
+  /user/check:
+    post:
+      operationId: checkUsers
+      summary: Look phone numbers up in MAX
+      description: |-
+        Looks each number up in MAX, one by one, without the lookup cache of
+        `POST /chat/send/text` and without the pause. A number whose lookup
+        failed gets `exists` false plus `error`.
+      tags:
+      - user
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckUsersBody'
+      responses:
+        "200":
+          description: One result per number, in order
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Get contacts
-      tags:
-      - User
+                $ref: '#/components/schemas/CheckUsersResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/AccountLookupError'
+        "503":
+          $ref: '#/components/responses/NotConnected'
   /user/info:
     post:
-      description: Gets user information by MAX user ID. Supports single userId or
-        batch request with userIds array (max 100)
+      operationId: getUserInfo
+      summary: Get MAX users by id
+      description: MAX users by their ids, from the session's cache or from MAX.
+      tags:
+      - user
+      security:
+      - ApiKeyAuth: []
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UserInfoBody'
-        description: User ID or IDs array
-        required: true
       responses:
         "200":
+          description: The users MAX knows
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserInfoResponse'
-          description: OK
         "400":
+          description: The body is missing or not JSON, or `userIds` is empty (no `code`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Not Found
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
         "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
-      security:
-      - ApiKeyAuth: []
-      summary: Get user info
-      tags:
-      - User
+          $ref: '#/components/responses/NotConnected'
   /user/presence:
     post:
-      description: Sends typing indicator to a chat
+      operationId: sendPresence
+      summary: Show typing in a chat
+      description: Sends MAX's typing indicator to a chat.
+      tags:
+      - user
+      security:
+      - ApiKeyAuth: []
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PresenceBody'
-        description: Chat ID
-        required: true
+              $ref: '#/components/schemas/ChatIdBody'
       responses:
         "200":
+          description: Sent (`message` "Presence sent")
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
-          description: OK
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
         "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/create:
+    post:
+      operationId: createGroup
+      summary: Create a group chat
+      description: Creates a group chat with the given MAX users.
+      tags:
+      - group
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupBody'
+      responses:
+        "200":
+          description: The new chat
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Service Unavailable
+                $ref: '#/components/schemas/GroupResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/info:
+    post:
+      operationId: getGroupInfo
+      summary: Get a chat
+      description: A chat as MAX gives it.
+      tags:
+      - group
       security:
       - ApiKeyAuth: []
-      summary: Send presence
-      tags:
-      - User
-  /webhook:
-    delete:
-      description: Removes the webhook URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatIdBody'
       responses:
         "200":
+          description: The chat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/ChatNotFound'
+        "500":
+          $ref: '#/components/responses/AccountLookupError'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/invitelink:
+    post:
+      operationId: getGroupInviteLink
+      summary: Get a chat's invite link
+      description: The chat's link as MAX gives it ("" when it has none).
+      tags:
+      - group
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatIdBody'
+      responses:
+        "200":
+          description: The link
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteLinkResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/ChatNotFound'
+        "500":
+          $ref: '#/components/responses/AccountLookupError'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/join:
+    post:
+      operationId: joinGroup
+      summary: Join a group chat by link
+      description: Joins a group chat by its invite link.
+      tags:
+      - group
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupJoinBody'
+      responses:
+        "200":
+          description: The joined chat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/leave:
+    post:
+      operationId: leaveGroup
+      summary: Leave a group chat
+      description: The account leaves the chat.
+      tags:
+      - group
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatIdBody'
+      responses:
+        "200":
+          description: Left (`message` "Left group")
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
-          description: OK
-      security:
-      - ApiKeyAuth: []
-      summary: Delete webhook
-      tags:
-      - Webhook
-    get:
-      description: Returns current webhook URL
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebhookResponse'
-          description: OK
-      security:
-      - ApiKeyAuth: []
-      summary: Get webhook
-      tags:
-      - Webhook
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/name:
     post:
-      description: Sets webhook URL for receiving events
+      operationId: setGroupName
+      summary: Rename a group chat
+      description: Sets the chat's title.
+      tags:
+      - group
+      security:
+      - ApiKeyAuth: []
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WebhookBody'
-        description: Webhook URL
-        required: true
+              $ref: '#/components/schemas/GroupNameBody'
       responses:
         "200":
+          description: Renamed (`message` "Group name updated")
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookResponse'
-          description: OK
+                $ref: '#/components/schemas/MessageResponse'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/topic:
+    post:
+      operationId: setGroupTopic
+      summary: Set a group chat's description
+      description: Sets the chat's description.
+      tags:
+      - group
       security:
       - ApiKeyAuth: []
-      summary: Set webhook
-      tags:
-      - Webhook
-    put:
-      description: Updates webhook URL
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WebhookBody'
-        description: Webhook URL
-        required: true
+              $ref: '#/components/schemas/GroupTopicBody'
       responses:
         "200":
+          description: Set (`message` "Group topic updated")
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookResponse'
-          description: OK
+                $ref: '#/components/schemas/MessageResponse'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: Bad Request
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /group/updateparticipants:
+    post:
+      operationId: updateGroupParticipants
+      summary: Add or remove group members
+      description: Adds (`operation` "add") or removes (anything else) MAX users of a chat.
+      tags:
+      - group
       security:
       - ApiKeyAuth: []
-      summary: Update webhook
-      tags:
-      - Webhook
-servers:
-- description: Local development server
-  url: http://localhost:5555
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateParticipantsBody'
+      responses:
+        "200":
+          description: Done (`message` "Participants updated")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "400":
+          $ref: '#/components/responses/BadBody'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/MAXCallFailed'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+webhooks:
+  event:
+    post:
+      operationId: webhookEvent
+      summary: An event of the account
+      description: |-
+        The gateway posts each event to the account's webhook when the account
+        is subscribed to its type (or to `All`). Events are posted concurrently
+        and are not ordered; order them by `eventTimestamp`. The body never
+        carries the account token, but `QRAuthorizedEvent` carries the MAX auth
+        token, and `SyncEvent` and the message events the owner's chats and
+        messages. Delivery is retried on a network error, 5xx, 408 and 429
+        (`WEBHOOK_RETRY_COUNT` attempts, from `WEBHOOK_RETRY_DELAY` seconds,
+        doubling).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEvent'
+      responses:
+        "200":
+          description: Any 2xx, 3xx or non-retried 4xx ends the delivery
+components:
+  securitySchemes:
+    AdminAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: The admin token (`MAXAPI_ADMIN_TOKEN`), raw, without `Bearer`
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: token
+      description: The account token from `POST /admin/users`
+  responses:
+    AdminUnauthorized:
+      description: 'Wrong or missing admin token: `{"success": false, "error": "unauthorized"}`, no `code`'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: 'Unknown account token: `{"success": false, "error": "unauthorized"}`, no `code`'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    AccountLookupError:
+      description: A database error while reading the account by its token (no `code`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotConnected:
+      description: '"not connected": no live MAX session (no `code`)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadBody:
+      description: The body is missing or not JSON (no `code`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    MAXCallFailed:
+      description: MAX refused the call or did not answer it in time (no `code`), or a database error while reading the account
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ChatNotFound:
+      description: MAX did not give the chat ("chat not found", no `code`), also when MAX did not answer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    MediaBadRequest:
+      description: |-
+        Not sent (no `code`): the body is missing or not JSON, the `phone`
+        lookup failed for any reason ("user not found"), or the media could not
+        be decoded or downloaded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    MediaSendFailed:
+      description: |-
+        "send failed" (no `code`): the upload or the send failed; the outcome is
+        unknown. Also a database error while reading the account.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      description: |-
+        The error body of every call. Most errors carry no `code`: only
+        `POST /chat/send/text`, `POST /session/resume` and
+        `GET /admin/users/{userid}` send one. Only `POST /chat/send/text` adds
+        `upstreamCode` and the account's pause.
+      required:
+      - success
+      - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: A human-readable text, often with MAX's error inside; it may change. Do not branch on it.
+          example: 'send rejected: Refused: Refused (chat.denied)'
+        code:
+          type: string
+          description: |-
+            The machine code, when the answer has one. `POST /chat/send/text`:
+            the delivery outcome codes `not_connected`, `invalid_target`,
+            `address_not_found`, `lookup_failed`, `send_rejected`, `send_failed`
+            (`address_refused` is reserved and not sent yet), and
+            `INVALID_INPUT`. `POST /session/resume`: `INVALID_INPUT`,
+            `INTERNAL_ERROR`. `GET /admin/users/{userid}`: `NOT_FOUND`,
+            `INTERNAL_ERROR`. Treat an unknown code as a failure of the call.
+          example: send_rejected
+        upstreamCode:
+          type: string
+          description: |-
+            The error code MAX itself answered with (`chat.denied`, `not.found`,
+            `error.user.restricted.send`). Absent when MAX did not answer with an
+            error: a timeout, a lost session, or a refusal by the gateway itself.
+          example: chat.denied
+        paused:
+          type: boolean
+          description: |-
+            Present (true) only when sending from the MAX account is paused: by
+            this refusal, or before it. Stop sending from every connection of
+            this MAX account until `POST /session/resume`.
+        pauseReason:
+          $ref: '#/components/schemas/PauseReason'
+    PauseReason:
+      type: string
+      description: Why sending from the MAX account is paused. maxapi gives only `spam` (a limit or restriction error of MAX).
+      example: spam
+    EventType:
+      type: string
+      description: |-
+        A webhook event type. `All` subscribes to every event. `Connected`,
+        `FileReady` and `HistorySync` are accepted but never sent.
+      enum:
+      - Message
+      - MessageEdit
+      - MessageDelete
+      - ReadReceipt
+      - Connected
+      - Disconnected
+      - Reconnecting
+      - ReconnectExhausted
+      - Sync
+      - LoggedOut
+      - QRGenerated
+      - QRScanned
+      - QRAuthorized
+      - QRExpired
+      - AuthExpired
+      - ChatUpdate
+      - Typing
+      - ReactionChange
+      - ContactUpdate
+      - PresenceUpdate
+      - FileReady
+      - HistorySync
+      - All
+    MessageResponse:
+      type: object
+      required:
+      - success
+      - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: User deleted
+    HealthResponse:
+      type: object
+      required:
+      - success
+      - status
+      - version
+      - uptime_seconds
+      - db_ok
+      - rabbitmq_ok
+      - connected_users
+      - goroutines
+      - mem_alloc_mb
+      - timestamp
+      properties:
+        success:
+          type: boolean
+          description: false when the database does not answer
+          example: true
+        status:
+          type: string
+          description: '`ok`, or `degraded` when the database does not answer'
+          example: ok
+        version:
+          type: string
+          example: 1.5.0
+        uptime_seconds:
+          type: integer
+          format: int64
+          example: 12345
+        db_ok:
+          type: boolean
+          example: true
+        rabbitmq_ok:
+          type: boolean
+          description: RabbitMQ is configured and connected
+          example: false
+        connected_users:
+          type: integer
+          description: Accounts with a live MAX connection
+          example: 3
+        goroutines:
+          type: integer
+          example: 87
+        mem_alloc_mb:
+          type: integer
+          format: int64
+          example: 67
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix time in seconds
+          example: 1793001234
+    AddUserBody:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Account name; shown in the webhook's `instanceName`. Not validated.
+          example: Shop bot
+        webhook:
+          type: string
+          description: Where events go, used exactly as given. Empty means no events.
+          example: https://example.com/webhook
+        events:
+          type: string
+          description: |-
+            Comma-separated event subscription of `EventType` names, stored as
+            given. `POST /session/connect` overwrites it with `subscribe`.
+          example: Sync,QRAuthorized,AuthExpired,LoggedOut
+    AddUserResponse:
+      type: object
+      required:
+      - success
+      - id
+      - token
+      - name
+      properties:
+        success:
+          type: boolean
+          example: true
+        id:
+          type: string
+          description: The account id, for `/admin/users/{userid}`
+          example: 6f1c2d4e-8b3e-4035-ba87-3f96a0e3f5c0
+        token:
+          type: string
+          description: The account token, for the `token` header
+          example: 0b7a9e31-5d2c-4f6a-9e8b-1c2d3e4f5a6b
+        name:
+          type: string
+          example: Shop bot
+    UpdateUserBody:
+      type: object
+      description: All three fields are written; an absent one becomes "".
+      properties:
+        name:
+          type: string
+          example: Shop bot
+        webhook:
+          type: string
+          example: https://example.com/webhook
+        events:
+          type: string
+          description: Comma-separated `EventType` names, stored as given
+          example: Sync,QRAuthorized,AuthExpired,LoggedOut
+    ListUsersResponse:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type:
+          - array
+          - "null"
+          description: The accounts; null when there are none
+          items:
+            $ref: '#/components/schemas/UserSummary'
+    UserSummary:
+      type: object
+      required:
+      - id
+      - name
+      - token
+      - maxUserId
+      - webhook
+      - events
+      - connected
+      - authenticated
+      properties:
+        id:
+          type: string
+          example: 6f1c2d4e-8b3e-4035-ba87-3f96a0e3f5c0
+        name:
+          type: string
+          example: Shop bot
+        token:
+          type: string
+          description: The account token
+          example: 0b7a9e31-5d2c-4f6a-9e8b-1c2d3e4f5a6b
+        maxUserId:
+          type:
+          - integer
+          - "null"
+          format: int64
+          description: The MAX id stored at the last login; null before the first
+          example: 123456789
+        webhook:
+          type: string
+          example: https://example.com/webhook
+        events:
+          type: string
+          description: The stored subscription, comma-separated
+          example: Sync,QRAuthorized,AuthExpired,LoggedOut
+        connected:
+          type: integer
+          description: The stored connected flag, 1 or 0 (not the live session)
+          example: 1
+        authenticated:
+          type: boolean
+          description: A MAX login is stored
+          example: true
+    UserDetail:
+      type: object
+      required:
+      - id
+      - name
+      - token
+      - webhook
+      - max_user_id
+      - device_id
+      - connected
+      - connected_flag
+      - auth_configured
+      - events
+      - proxy_configured
+      - proxy_url
+      - history
+      - s3_enabled
+      - s3_endpoint
+      - s3_region
+      - s3_bucket
+      - media_delivery
+      properties:
+        id:
+          type: string
+          example: 6f1c2d4e-8b3e-4035-ba87-3f96a0e3f5c0
+        name:
+          type: string
+          example: Shop bot
+        token:
+          type: string
+          description: The account token
+          example: 0b7a9e31-5d2c-4f6a-9e8b-1c2d3e4f5a6b
+        webhook:
+          type: string
+          example: https://example.com/webhook
+        max_user_id:
+          type: integer
+          format: int64
+          description: The MAX id stored at the last login; 0 before the first
+          example: 123456789
+        device_id:
+          type: string
+          description: The device id the gateway logs into MAX with
+          example: 6e8ed92f-1c2d-4e5f-8a9b-0c1d2e3f4a5b
+        connected:
+          type: boolean
+          description: The MAX connection is up now
+          example: true
+        connected_flag:
+          type: boolean
+          description: The stored connected flag
+          example: true
+        auth_configured:
+          type: boolean
+          description: A MAX login (auth token) is stored; the token itself is never shown
+          example: true
+        events:
+          type: array
+          description: The stored subscription
+          items:
+            type: string
+          example:
+          - Sync
+          - QRAuthorized
+        proxy_configured:
+          type: boolean
+          example: false
+        proxy_url:
+          type: string
+          description: The proxy URL with its password replaced by `***`
+          example: http://user:***@proxy.internal:3128
+        history:
+          type: integer
+          description: How many messages per chat the gateway keeps in its history; 0 keeps none
+          example: 0
+        s3_enabled:
+          type: boolean
+          example: false
+        s3_endpoint:
+          type: string
+          example: ""
+        s3_region:
+          type: string
+          example: ""
+        s3_bucket:
+          type: string
+          example: ""
+        media_delivery:
+          type: string
+          description: '`base64`, `s3` or `both`: how photos of incoming messages reach the webhook'
+          example: base64
+    ConnectBody:
+      type: object
+      description: The body is required; `{}` is enough.
+      properties:
+        subscribe:
+          type: array
+          description: The event subscription; overwrites the stored one, also when already connected. Duplicates are kept once.
+          items:
+            $ref: '#/components/schemas/EventType'
+          example:
+          - Sync
+          - QRAuthorized
+          - AuthExpired
+          - LoggedOut
+          - Disconnected
+          - Reconnecting
+          - QRGenerated
+          - QRScanned
+          - QRExpired
+        immediate:
+          type: boolean
+          description: |-
+            false (default): with a stored login and no session, wait 5 s for the
+            session and answer 500 "failed to connect" if it is not up. true:
+            answer at once; the outcome arrives as `Sync` or `AuthExpired`.
+          example: true
+    ConnectResponse:
+      type: object
+      required:
+      - success
+      - details
+      - events
+      properties:
+        success:
+          type: boolean
+          example: true
+        details:
+          type: string
+          description: '"Awaiting QR scan", "Connected to MAX" or "Already connected to MAX"'
+          example: Already connected to MAX
+        events:
+          type: string
+          description: The stored subscription, comma-separated
+          example: Sync,QRAuthorized,AuthExpired,LoggedOut
+        alreadyConnected:
+          type: boolean
+          description: Present (true) only when the session was already up
+        paused:
+          type: boolean
+          description: Whether sending from the MAX account is paused; only with `alreadyConnected`
+        pauseReason:
+          $ref: '#/components/schemas/PauseReason'
+        upstreamCode:
+          type: string
+          description: Only while paused (and `alreadyConnected`); the MAX error code that paused the account
+          example: error.user.restricted.send
+    QRResponse:
+      type: object
+      required:
+      - success
+      - qrcode
+      properties:
+        success:
+          type: boolean
+          example: true
+        qrcode:
+          type: string
+          description: A 256x256 PNG data URL of MAX's login link; "" between a scan and the login
+          example: data:image/png;base64,iVBORw0KGgo...
+    StatusResponse:
+      type: object
+      required:
+      - success
+      - connected
+      - authenticated
+      - loggedIn
+      - maxUserID
+      - paused
+      properties:
+        success:
+          type: boolean
+          example: true
+        connected:
+          type: boolean
+          description: The account's MAX connection is up (the QR login's connection too). A paused account keeps its session.
+        authenticated:
+          type: boolean
+          description: A MAX login (auth token) is stored
+        loggedIn:
+          type: boolean
+          description: '`connected` and `authenticated`'
+        maxUserID:
+          type: integer
+          format: int64
+          description: The MAX id of the session's account; 0 while no logged-in session is up
+          example: 123456789
+        paused:
+          type: boolean
+          description: |-
+            Whether sending from the MAX account is paused: the live session's
+            account, or without a session the one stored at the last login. Read
+            it before `connected`.
+        pauseReason:
+          $ref: '#/components/schemas/PauseReason'
+        upstreamCode:
+          type: string
+          description: Only while paused; the MAX error code that paused the account
+          example: error.user.restricted.send
+    ResumeBody:
+      type: object
+      description: Optional; no body and `{}` work too.
+      properties:
+        captchaKey:
+          type: string
+          description: Part of the VK gateway's contract; read and ignored (a MAX pause has no captcha).
+          deprecated: true
+    ResumeResponse:
+      type: object
+      required:
+      - success
+      - maxUserID
+      properties:
+        success:
+          type: boolean
+          example: true
+        maxUserID:
+          type: integer
+          format: int64
+          description: The MAX account whose pause was lifted; 0 when unknown
+          example: 123456789
+    SyncResponse:
+      type: object
+      description: '`success`, `maxUserID` and every field of MAX''s login answer (`profile`, `chats`, `contacts`, ...), as MAX sends them.'
+      required:
+      - success
+      - maxUserID
+      properties:
+        success:
+          type: boolean
+          example: true
+        maxUserID:
+          type: integer
+          format: int64
+          example: 123456789
+      additionalProperties: true
+    WebhookBody:
+      type: object
+      properties:
+        webhook:
+          type: string
+          description: The URL; "" sends no events
+          example: https://example.com/webhook
+    WebhookResponse:
+      type: object
+      required:
+      - success
+      - webhook
+      properties:
+        success:
+          type: boolean
+          example: true
+        webhook:
+          type: string
+          example: https://example.com/webhook
+    SendTextBody:
+      type: object
+      description: One of `chatId` and `phone` is required; with both, `chatId` wins. Unknown fields are ignored.
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          description: The MAX chat id. 0 means none (chat 0 is the account's own Favorites and is never addressed here).
+          example: 123456789
+        phone:
+          type: string
+          description: The recipient's phone with country code; looked up in the cache, then in MAX. The cache key is the string exactly as sent.
+          example: "79001234567"
+        text:
+          type: string
+          example: Заказ 123 готов к выдаче
+        replyTo:
+          type: integer
+          format: int64
+          description: Id of the message to reply to; 0 for none
+          example: 0
+        notify:
+          type: boolean
+          description: Whether MAX notifies the recipient; default false
+          example: true
+    SendTextResponse:
+      type: object
+      required:
+      - success
+      - messageId
+      - chatId
+      properties:
+        success:
+          type: boolean
+          example: true
+        messageId:
+          type: string
+          description: MAX's id of the new message, as a string
+          example: "115478893120847321"
+        chatId:
+          type: integer
+          format: int64
+          description: The chat the message went to; for a send by `phone`, the dialog of the account and the recipient
+          example: 123456789
+    SendImageBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          description: The MAX chat id; when 0, `phone` is looked up
+          example: 123456789
+        phone:
+          type: string
+          example: "79001234567"
+        image:
+          type: string
+          description: A data URL, an http(s) URL the gateway downloads, or plain base64
+          example: data:image/jpeg;base64,/9j/4AAQ...
+        caption:
+          type: string
+          example: Ваш заказ
+        notify:
+          type: boolean
+          example: true
+    SendAudioBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          description: The MAX chat id; when 0, `phone` is looked up
+          example: 123456789
+        phone:
+          type: string
+          example: "79001234567"
+        audio:
+          type: string
+          description: A data URL, an http(s) URL the gateway downloads, or plain base64
+          example: data:audio/mpeg;base64,SUQz...
+        fileName:
+          type: string
+          description: Default `audio.mp3`
+          example: audio.mp3
+        notify:
+          type: boolean
+          example: true
+    SendDocumentBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          description: The MAX chat id; when 0, `phone` is looked up
+          example: 123456789
+        phone:
+          type: string
+          example: "79001234567"
+        document:
+          type: string
+          description: A data URL, an http(s) URL the gateway downloads, or plain base64
+          example: data:application/pdf;base64,JVBERi0...
+        fileName:
+          type: string
+          description: Default `document`
+          example: invoice.pdf
+        caption:
+          type: string
+          example: Счёт
+        notify:
+          type: boolean
+          example: true
+    SendVideoBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          description: The MAX chat id; when 0, `phone` is looked up
+          example: 123456789
+        phone:
+          type: string
+          example: "79001234567"
+        video:
+          type: string
+          description: A data URL, an http(s) URL the gateway downloads, or plain base64
+          example: data:video/mp4;base64,AAAAIGZ0eXA...
+        fileName:
+          type: string
+          description: Default `video.mp4`
+          example: video.mp4
+        caption:
+          type: string
+          example: Обзор
+        notify:
+          type: boolean
+          example: true
+    SendMediaResponse:
+      type: object
+      required:
+      - success
+      - messageId
+      properties:
+        success:
+          type: boolean
+          example: true
+        messageId:
+          type: string
+          description: MAX's id of the new message, as a string
+          example: "115478893120847321"
+    EditMessageBody:
+      type: object
+      required:
+      - chatId
+      - messageId
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        messageId:
+          type: integer
+          format: int64
+          example: 115478893120847321
+        text:
+          type: string
+          example: Исправленный текст
+    DeleteMessagesBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        messageIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          example:
+          - 115478893120847321
+        forMe:
+          type: boolean
+          description: Delete only for the account
+          example: false
+    ReactBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        messageId:
+          type: string
+          description: The message id as a string
+          example: "115478893120847321"
+        reaction:
+          type: string
+          description: The emoji; empty removes the account's reaction
+          example: 👍
+    MarkReadBody:
+      type: object
+      required:
+      - chatId
+      - messageId
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        messageId:
+          type: integer
+          format: int64
+          example: 115478893120847321
+    ChatHistoryBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        count:
+          type: integer
+          description: How many messages before `fromTime`; 0 means 50
+          example: 50
+        fromTime:
+          type: integer
+          format: int64
+          description: Unix time in milliseconds; 0 means now
+          example: 0
+    ChatHistoryResponse:
+      type: object
+      required:
+      - success
+      - messages
+      properties:
+        success:
+          type: boolean
+          example: true
+        messages:
+          type:
+          - array
+          - "null"
+          description: The messages; null when there are none
+          items:
+            $ref: '#/components/schemas/MaxMessage'
+    DownloadUrlBody:
+      type: object
+      required:
+      - url
+      properties:
+        url:
+          type: string
+          example: https://i.oneme.ru/i?r=BTGBPUwtwgYUeoFhO7rESmr8
+    DownloadDocumentBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        messageId:
+          type: integer
+          format: int64
+          example: 115478893120847321
+        fileId:
+          type: integer
+          format: int64
+          description: The attachment's `fileId`
+          example: 111222333
+    DownloadVideoBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        messageId:
+          type: integer
+          format: int64
+          example: 115478893120847321
+        videoId:
+          type: integer
+          format: int64
+          description: The attachment's `videoId`
+          example: 111222333
+    DownloadMediaResponse:
+      type: object
+      required:
+      - success
+      - data
+      - mimeType
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: string
+          description: The file in base64
+          example: /9j/4AAQSkZJRg...
+        mimeType:
+          type: string
+          description: Sniffed from the bytes
+          example: image/jpeg
+    DownloadVideoResponse:
+      type: object
+      required:
+      - success
+      - data
+      - mimeType
+      - url
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: string
+          description: The video in base64
+          example: AAAAIGZ0eXA...
+        mimeType:
+          type: string
+          description: Sniffed from the bytes
+          example: video/mp4
+        url:
+          type: string
+          description: MAX's download URL
+          example: https://vd.okcdn.ru/?expires=...
+    ContactsResponse:
+      type: object
+      required:
+      - success
+      - contacts
+      - count
+      properties:
+        success:
+          type: boolean
+          example: true
+        contacts:
+          type:
+          - array
+          - "null"
+          description: The contacts; null when there are none
+          items:
+            $ref: '#/components/schemas/MaxContact'
+        count:
+          type: integer
+          example: 42
+    CheckUsersBody:
+      type: object
+      properties:
+        phone:
+          type: array
+          description: Phone numbers with country code
+          items:
+            type: string
+          example:
+          - "79001234567"
+    CheckUsersResponse:
+      type: object
+      required:
+      - success
+      - users
+      properties:
+        success:
+          type: boolean
+          example: true
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckUsersResult'
+    CheckUsersResult:
+      type: object
+      required:
+      - phone
+      - exists
+      - maxUserId
+      properties:
+        phone:
+          type: string
+          example: "79001234567"
+        exists:
+          type: boolean
+          description: MAX has a user with the number
+          example: true
+        maxUserId:
+          type: integer
+          format: int64
+          description: The user's MAX id; 0 when not found
+          example: 987654321
+        name:
+          type: string
+          description: The user's first name in MAX, when found
+          example: Иван
+        error:
+          type: string
+          description: Present when the lookup itself failed; `exists` false then does not mean that MAX has no such user
+          example: 'Timeout Error: Request timed out'
+    UserInfoBody:
+      type: object
+      required:
+      - userIds
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+            format: int64
+          example:
+          - 987654321
+    UserInfoResponse:
+      type: object
+      required:
+      - success
+      - users
+      - count
+      properties:
+        success:
+          type: boolean
+          example: true
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaxUserInfo'
+        count:
+          type: integer
+          example: 1
+    ChatIdBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+    CreateGroupBody:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Покупатели
+        participants:
+          type: array
+          description: MAX user ids
+          items:
+            type: integer
+            format: int64
+          example:
+          - 987654321
+    GroupJoinBody:
+      type: object
+      properties:
+        link:
+          type: string
+          example: https://max.ru/join/abc123
+    GroupNameBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        name:
+          type: string
+          example: Покупатели
+    GroupTopicBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        topic:
+          type: string
+          example: Новости магазина
+    UpdateParticipantsBody:
+      type: object
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          example: 123456789
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          example:
+          - 987654321
+        operation:
+          type: string
+          description: '`add` adds; anything else removes'
+          enum:
+          - add
+          - remove
+          example: add
+    GroupResponse:
+      type: object
+      required:
+      - success
+      - chat
+      properties:
+        success:
+          type: boolean
+          example: true
+        chat:
+          $ref: '#/components/schemas/MaxChat'
+    InviteLinkResponse:
+      type: object
+      required:
+      - success
+      - inviteLink
+      properties:
+        success:
+          type: boolean
+          example: true
+        inviteLink:
+          type: string
+          description: '"" when the chat has no link'
+          example: https://max.ru/join/abc123
+    MaxName:
+      type: object
+      description: A name of a MAX user, as MAX gives it
+      properties:
+        name:
+          type: string
+          example: Иван Петров
+        firstName:
+          type: string
+          example: Иван
+        lastName:
+          type: string
+          example: Петров
+        type:
+          type: string
+          example: ONEME
+    MaxContact:
+      type: object
+      description: A contact, as MAX gives it
+      required:
+      - id
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 987654321
+        accountStatus:
+          type: integer
+          example: 0
+        baseRawUrl:
+          type: string
+        baseUrl:
+          type: string
+        names:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaxName'
+        options:
+          type: array
+          items:
+            type: string
+        photoId:
+          type: integer
+          format: int64
+        updateTime:
+          type: integer
+          format: int64
+    MaxUserInfo:
+      type: object
+      description: A MAX user. Every field is present; `names` and `options` may be null.
+      required:
+      - id
+      - accountStatus
+      - names
+      - options
+      - baseUrl
+      - baseRawUrl
+      - photoId
+      - description
+      - gender
+      - link
+      - updateTime
+      - webApp
+      - avatarUrl
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 987654321
+        accountStatus:
+          type: integer
+          example: 0
+        names:
+          type:
+          - array
+          - "null"
+          items:
+            $ref: '#/components/schemas/MaxName'
+        options:
+          type:
+          - array
+          - "null"
+          items:
+            type: string
+        baseUrl:
+          type: string
+        baseRawUrl:
+          type: string
+        photoId:
+          type: integer
+          format: int64
+        description:
+          type: string
+        gender:
+          type: integer
+        link:
+          type: string
+        updateTime:
+          type: integer
+          format: int64
+        webApp:
+          type: string
+        avatarUrl:
+          type: string
+          description: '`baseRawUrl`, else `baseUrl`; "" when neither'
+    MaxChat:
+      type: object
+      description: A chat, as MAX gives it
+      required:
+      - id
+      - type
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: -68000000000001
+        cid:
+          type: integer
+          format: int64
+        type:
+          type: string
+          description: '`DIALOG`, `CHAT` or `CHANNEL`'
+          example: CHAT
+        title:
+          type: string
+          example: Покупатели
+        description:
+          type: string
+        owner:
+          type: integer
+          format: int64
+        access:
+          type: string
+        link:
+          type: string
+        participants:
+          type: object
+          description: MAX user id → MAX's value for the member
+          additionalProperties:
+            type: integer
+            format: int64
+        participantsCount:
+          type: integer
+        admins:
+          type: array
+          items:
+            type: integer
+            format: int64
+        adminParticipants:
+          type: object
+          additionalProperties: true
+        lastMessage:
+          $ref: '#/components/schemas/MaxMessage'
+        options:
+          $ref: '#/components/schemas/MaxChatOptions'
+        created:
+          type: integer
+          format: int64
+        modified:
+          type: integer
+          format: int64
+        joinTime:
+          type: integer
+          format: int64
+        messagesCount:
+          type: integer
+        status:
+          type: string
+        baseIconUrl:
+          type: string
+        baseRawIconUrl:
+          type: string
+        lastEventTime:
+          type: integer
+          format: int64
+        lastDelayedUpdateTime:
+          type: integer
+          format: int64
+        lastFireDelayedErrorTime:
+          type: integer
+          format: int64
+    MaxChatOptions:
+      type: object
+      properties:
+        ONLY_OWNER_CAN_CHANGE_ICON_TITLE:
+          type: boolean
+        ALL_CAN_PIN_MESSAGE:
+          type: boolean
+        ONLY_ADMIN_CAN_ADD_MEMBER:
+          type: boolean
+        ONLY_ADMIN_CAN_CALL:
+          type: boolean
+        MEMBERS_CAN_SEE_PRIVATE_LINK:
+          type: boolean
+    MaxMessage:
+      type: object
+      description: A message, as MAX gives it
+      required:
+      - id
+      - text
+      - time
+      - type
+      properties:
+        id:
+          type: string
+          example: "115478893120847321"
+        chatId:
+          type: integer
+          format: int64
+        sender:
+          type: integer
+          format: int64
+          description: The sender's MAX id
+        text:
+          type: string
+        time:
+          type: integer
+          format: int64
+          description: Unix time in milliseconds
+        type:
+          type: string
+          description: '`TEXT`, `SYSTEM` or `SERVICE`'
+          example: TEXT
+        status:
+          type: string
+          description: '`EDITED` or `REMOVED` when so'
+        options:
+          type: integer
+        elements:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaxElement'
+        attaches:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaxAttachment'
+        link:
+          $ref: '#/components/schemas/MaxMessageLink'
+        reactionInfo:
+          $ref: '#/components/schemas/MaxReactionInfo'
+        cid:
+          type: integer
+          format: int64
+    MaxElement:
+      type: object
+      description: A formatting span of a message's text
+      properties:
+        type:
+          type: string
+          description: '`STRONG`, `EMPHASIZED`, `UNDERLINE`, `STRIKETHROUGH`, ...'
+        from:
+          type: integer
+        length:
+          type: integer
+    MaxAttachment:
+      type: object
+      description: An attachment of a message; the fields present depend on `_type`
+      properties:
+        _type:
+          type: string
+          description: '`PHOTO`, `VIDEO`, `FILE`, `STICKER`, `AUDIO`, `CONTROL`, ...'
+          example: PHOTO
+        photoId:
+          type: integer
+          format: int64
+        photoToken:
+          type: string
+        videoId:
+          type: integer
+          format: int64
+        fileId:
+          type: integer
+          format: int64
+        audioId:
+          type: integer
+          format: int64
+        token:
+          type: string
+        baseUrl:
+          type: string
+        url:
+          type: string
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        duration:
+          type: integer
+        previewData:
+          type: string
+        event:
+          type: string
+        chatType:
+          type: string
+        title:
+          type: string
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+    MaxMessageLink:
+      type: object
+      description: A reply or forward link of a message
+      properties:
+        type:
+          type: string
+          example: REPLY
+        chatId:
+          type: integer
+          format: int64
+        messageId:
+          type: string
+        message:
+          $ref: '#/components/schemas/MaxMessage'
+    MaxReactionInfo:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+        yourReaction:
+          type: string
+        counters:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaxReactionCounter'
+    MaxReactionCounter:
+      type: object
+      properties:
+        reaction:
+          type: string
+        count:
+          type: integer
+    WebhookEvent:
+      description: Any webhook body; `type` tells which.
+      oneOf:
+      - $ref: '#/components/schemas/MessageEvent'
+      - $ref: '#/components/schemas/MessageEditEvent'
+      - $ref: '#/components/schemas/MessageDeleteEvent'
+      - $ref: '#/components/schemas/ReadReceiptEvent'
+      - $ref: '#/components/schemas/ChatUpdateEvent'
+      - $ref: '#/components/schemas/TypingEvent'
+      - $ref: '#/components/schemas/ReactionChangeEvent'
+      - $ref: '#/components/schemas/ContactUpdateEvent'
+      - $ref: '#/components/schemas/PresenceUpdateEvent'
+      - $ref: '#/components/schemas/DisconnectedEvent'
+      - $ref: '#/components/schemas/ReconnectingEvent'
+      - $ref: '#/components/schemas/ReconnectExhaustedEvent'
+      - $ref: '#/components/schemas/SyncEvent'
+      - $ref: '#/components/schemas/LoggedOutEvent'
+      - $ref: '#/components/schemas/QRGeneratedEvent'
+      - $ref: '#/components/schemas/QRScannedEvent'
+      - $ref: '#/components/schemas/QRAuthorizedEvent'
+      - $ref: '#/components/schemas/QRExpiredEvent'
+      - $ref: '#/components/schemas/AuthExpiredEvent'
+      discriminator:
+        propertyName: type
+        mapping:
+          Message: '#/components/schemas/MessageEvent'
+          MessageEdit: '#/components/schemas/MessageEditEvent'
+          MessageDelete: '#/components/schemas/MessageDeleteEvent'
+          ReadReceipt: '#/components/schemas/ReadReceiptEvent'
+          ChatUpdate: '#/components/schemas/ChatUpdateEvent'
+          Typing: '#/components/schemas/TypingEvent'
+          ReactionChange: '#/components/schemas/ReactionChangeEvent'
+          ContactUpdate: '#/components/schemas/ContactUpdateEvent'
+          PresenceUpdate: '#/components/schemas/PresenceUpdateEvent'
+          Disconnected: '#/components/schemas/DisconnectedEvent'
+          Reconnecting: '#/components/schemas/ReconnectingEvent'
+          ReconnectExhausted: '#/components/schemas/ReconnectExhaustedEvent'
+          Sync: '#/components/schemas/SyncEvent'
+          LoggedOut: '#/components/schemas/LoggedOutEvent'
+          QRGenerated: '#/components/schemas/QRGeneratedEvent'
+          QRScanned: '#/components/schemas/QRScannedEvent'
+          QRAuthorized: '#/components/schemas/QRAuthorizedEvent'
+          QRExpired: '#/components/schemas/QRExpiredEvent'
+          AuthExpired: '#/components/schemas/AuthExpiredEvent'
+    MessageEvent:
+      type: object
+      description: |-
+        A new message in one of the account's chats, the account's own included.
+        The media fields come from the message's attachments (the last one of a
+        kind wins); `base64`, `mimeType` and `s3` only for a photo, by
+        `media_delivery`.
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: Message
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        mediaType:
+          type: string
+          description: '`image`, `video`, `file` or `audio`'
+          example: image
+        mediaUrl:
+          type: string
+          description: A photo's URL
+        base64:
+          type: string
+          description: A photo's bytes in base64
+        mimeType:
+          type: string
+          description: With `base64`; `image/jpeg`
+        s3:
+          type: object
+          description: Where the photo was uploaded to S3
+          additionalProperties: true
+        videoId:
+          type: integer
+          format: int64
+        videoToken:
+          type: string
+        fileId:
+          type: integer
+          format: int64
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+          format: int64
+        audioId:
+          type: integer
+          format: int64
+        audioUrl:
+          type: string
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    MessageEditEvent:
+      type: object
+      description: A message was edited (MAX's message notification with status EDITED).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: MessageEdit
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    MessageDeleteEvent:
+      type: object
+      description: A message was deleted (MAX's message notification with status REMOVED).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: MessageDelete
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    ReadReceiptEvent:
+      type: object
+      description: Messages were read (MAX opcode 130).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: ReadReceipt
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    ChatUpdateEvent:
+      type: object
+      description: A chat changed (MAX opcode 135).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: ChatUpdate
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    TypingEvent:
+      type: object
+      description: Someone is typing (MAX opcode 129).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: Typing
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    ReactionChangeEvent:
+      type: object
+      description: Reactions of a message changed (MAX opcode 155).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: ReactionChange
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    ContactUpdateEvent:
+      type: object
+      description: A contact changed (MAX opcode 131).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: ContactUpdate
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    PresenceUpdateEvent:
+      type: object
+      description: A user's presence changed (MAX opcode 132).
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: PresenceUpdate
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    DisconnectedEvent:
+      type: object
+      description: MAX told the session to reconnect (opcode 3). The gateway's reconnect loop takes over; `Sync` follows a successful one.
+      required: [type, opcode, event, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: Disconnected
+        opcode:
+          $ref: '#/components/schemas/EventOpcode'
+        event:
+          $ref: '#/components/schemas/EventPayload'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    ReconnectingEvent:
+      type: object
+      description: The session dropped and the gateway is logging in again; sent on the first attempt and every 10th.
+      required: [type, attempt, max, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: Reconnecting
+        attempt:
+          type: integer
+          description: The attempt number, from 1
+          example: 1
+        max:
+          type: integer
+          description: The attempt limit (`MAX_CONNECT_RETRIES`); 0 means none
+          example: 0
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    ReconnectExhaustedEvent:
+      type: object
+      description: The reconnect attempts ran out (`MAX_CONNECT_RETRIES`); the session stays down until a connect. The login is kept.
+      required: [type, attempts, reason, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: ReconnectExhausted
+        attempts:
+          type: integer
+          example: 10
+        reason:
+          type: string
+          example: max_reconnect_attempts
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    SyncEvent:
+      type: object
+      description: |-
+        The session is logged in: after a connect with a stored login, after
+        `QRAuthorized`, after a reconnect, or after `POST /session/sync`. It
+        also carries every field of MAX's login answer (`profile`, `chats`,
+        `contacts`, ...): the owner's chats.
+      required: [type, maxUserID, reconnect, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: Sync
+        maxUserID:
+          $ref: '#/components/schemas/EventMaxUserID'
+        reconnect:
+          type: boolean
+          description: true after a reconnect
+        manual:
+          type: boolean
+          description: Present (true) only after `POST /session/sync`
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+      additionalProperties: true
+    LoggedOutEvent:
+      type: object
+      description: |-
+        MAX ended the session (opcode 20 pushed by MAX). The gateway account is
+        deleted with it; its token answers 401 from now on. Not sent for
+        `POST /session/logout` or `DELETE /admin/users/{userid}`.
+      required: [type, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: LoggedOut
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    QRGeneratedEvent:
+      type: object
+      description: A QR login started, or MAX's QR expired and the gateway issued a new one (up to 10 times).
+      required: [type, qrLink, qrCodeBase64, trackId, expiresAt, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: QRGenerated
+        qrLink:
+          type: string
+          description: MAX's login link the QR encodes
+        qrCodeBase64:
+          type: string
+          description: The same PNG data URL as `GET /session/qr`
+          example: data:image/png;base64,iVBORw0KGgo...
+        trackId:
+          type: string
+          description: MAX's id of this QR
+        expiresAt:
+          type: integer
+          format: int64
+          description: When MAX expires this QR, as MAX gives it
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    QRScannedEvent:
+      type: object
+      description: The owner scanned the QR (once per login).
+      required: [type, trackId, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: QRScanned
+        trackId:
+          type: string
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    QRAuthorizedEvent:
+      type: object
+      description: |-
+        The QR login completed and the session is up; `Sync` (with `maxUserID`)
+        follows. It carries the account's MAX auth token: do not store or log it.
+      required: [type, authToken, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: QRAuthorized
+        authToken:
+          type: string
+          description: The MAX auth token of the new login (a secret)
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    QRExpiredEvent:
+      type: object
+      description: The QR login ended without logging in.
+      required: [type, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: QRExpired
+        reason:
+          type: string
+          description: Present when MAX refused to confirm the scanned QR (the error text); absent when the QR ran out
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    AuthExpiredEvent:
+      type: object
+      description: |-
+        The session stopped and will not reconnect by itself: MAX refused the
+        stored login with an auth error (the login is erased; a new QR login is
+        needed), or refused the login 3 times in a row (the login is kept;
+        `POST /session/connect` tries again).
+      required: [type, reason, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: AuthExpired
+        reason:
+          type: string
+          description: The error text of an auth error; for refusals MAX's error code, "login timed out" or "login connection lost"
+          example: login timed out
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    EventUserID:
+      type: string
+      description: The account id (`userID` and `instanceID` are the same)
+      example: 6f1c2d4e-8b3e-4035-ba87-3f96a0e3f5c0
+    EventInstanceName:
+      type: string
+      description: The account name; "" when the gateway could not read it
+      example: Shop bot
+    EventTimestamp:
+      type: integer
+      format: int64
+      description: Unix time in seconds, set when the delivery starts; a retry keeps it
+      example: 1793001234
+    EventMaxUserID:
+      type: integer
+      format: int64
+      description: The MAX id of the account's MAX user
+      example: 123456789
+    EventOpcode:
+      type: integer
+      description: MAX's opcode of the notification
+      example: 128
+    EventPayload:
+      type: object
+      description: MAX's notification payload, as MAX sent it
+      additionalProperties: true

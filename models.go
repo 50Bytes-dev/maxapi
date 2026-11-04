@@ -1,13 +1,11 @@
 package main
 
-// Swagger model definitions for API documentation
+// Request and response shapes of the API. static/api/spec.yml is the
+// schema; TestSpecMatchesRoutes keeps its operations in step with routes.go.
 
 // ========== BASE RESPONSE ==========
 
 // ErrorResponse represents an error response
-// @Description Error response format. `code` is a stable machine-readable
-// @Description constant (e.g. INVALID_INPUT, NOT_FOUND, AUTH_EXPIRED); `error`
-// @Description is a free-form human description.
 type ErrorResponse struct {
 	Success bool   `json:"success" example:"false"`
 	Error   string `json:"error" example:"error message"`
@@ -15,7 +13,6 @@ type ErrorResponse struct {
 }
 
 // MessageResponse represents a simple success response with message
-// @Description Simple success response with message
 type MessageResponse struct {
 	Success bool   `json:"success" example:"true"`
 	Message string `json:"message" example:"Operation completed"`
@@ -24,8 +21,6 @@ type MessageResponse struct {
 // ========== SESSION RESPONSES ==========
 
 // StatusResponse represents the connection status response
-// @Description Connection and authentication status. paused is always
-// @Description present; pauseReason and upstreamCode only while paused.
 type StatusResponse struct {
 	Success       bool   `json:"success" example:"true"`
 	Connected     bool   `json:"connected" example:"true"`
@@ -38,7 +33,6 @@ type StatusResponse struct {
 }
 
 // ResumeResponse is returned by POST /session/resume.
-// @Description The MAX account whose pause was lifted.
 type ResumeResponse struct {
 	Success   bool  `json:"success" example:"true"`
 	MaxUserID int64 `json:"maxUserID" example:"123456789"`
@@ -47,7 +41,6 @@ type ResumeResponse struct {
 // ========== CHAT RESPONSES ==========
 
 // SendMessageResponse represents the response after sending a message
-// @Description Response after sending a message
 type SendMessageResponse struct {
 	Success   bool  `json:"success" example:"true"`
 	MessageID int64 `json:"messageId" example:"987654321"`
@@ -55,7 +48,6 @@ type SendMessageResponse struct {
 }
 
 // DownloadMediaResponse represents the response for downloading media
-// @Description Response with downloaded media data
 type DownloadMediaResponse struct {
 	Success  bool   `json:"success" example:"true"`
 	Data     string `json:"data" example:"base64_encoded_data"`
@@ -63,7 +55,6 @@ type DownloadMediaResponse struct {
 }
 
 // DownloadVideoResponse represents the response for downloading video
-// @Description Response with downloaded video data
 type DownloadVideoResponse struct {
 	Success  bool   `json:"success" example:"true"`
 	Data     string `json:"data" example:"base64_encoded_data"`
@@ -72,7 +63,6 @@ type DownloadVideoResponse struct {
 }
 
 // ChatHistoryResponse represents the response for chat history
-// @Description Response with chat history messages
 type ChatHistoryResponse struct {
 	Success  bool                     `json:"success" example:"true"`
 	Messages []map[string]interface{} `json:"messages"`
@@ -81,7 +71,6 @@ type ChatHistoryResponse struct {
 // ========== USER RESPONSES ==========
 
 // CheckUserResultItem represents a single user check result
-// @Description Single user check result
 type CheckUserResultItem struct {
 	Phone     string `json:"phone" example:"79001234567"`
 	Exists    bool   `json:"exists" example:"true"`
@@ -90,14 +79,12 @@ type CheckUserResultItem struct {
 }
 
 // CheckUserResponse represents the response for checking users
-// @Description Response with user existence check results
 type CheckUserResponse struct {
 	Success bool                  `json:"success" example:"true"`
 	Users   []CheckUserResultItem `json:"users"`
 }
 
 // UserInfoResponse represents the response for getting user info
-// @Description Response with user information (always returns array)
 type UserInfoResponse struct {
 	Success bool                     `json:"success" example:"true"`
 	Users   []map[string]interface{} `json:"users"`
@@ -105,7 +92,6 @@ type UserInfoResponse struct {
 }
 
 // ContactsResponse represents the response for getting contacts
-// @Description Response with list of contacts
 type ContactsResponse struct {
 	Success  bool                     `json:"success" example:"true"`
 	Contacts []map[string]interface{} `json:"contacts"`
@@ -115,14 +101,12 @@ type ContactsResponse struct {
 // ========== GROUP RESPONSES ==========
 
 // GroupChatResponse represents the response with group/chat info
-// @Description Response with group or chat information
 type GroupChatResponse struct {
 	Success bool                   `json:"success" example:"true"`
 	Chat    map[string]interface{} `json:"chat"`
 }
 
 // InviteLinkResponse represents the response with invite link
-// @Description Response with group invite link
 type InviteLinkResponse struct {
 	Success    bool   `json:"success" example:"true"`
 	InviteLink string `json:"inviteLink" example:"https://max.ru/join/abc123"`
@@ -131,7 +115,6 @@ type InviteLinkResponse struct {
 // ========== WEBHOOK RESPONSES ==========
 
 // WebhookResponse represents the response for webhook operations
-// @Description Response with webhook URL
 type WebhookResponse struct {
 	Success bool   `json:"success" example:"true"`
 	Webhook string `json:"webhook" example:"https://example.com/webhook"`
@@ -140,7 +123,6 @@ type WebhookResponse struct {
 // ========== ADMIN RESPONSES ==========
 
 // AddUserResponse represents the response for adding a user
-// @Description Response after creating a new user
 type AddUserResponse struct {
 	Success bool   `json:"success" example:"true"`
 	ID      string `json:"id" example:"a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0"`
@@ -149,14 +131,12 @@ type AddUserResponse struct {
 }
 
 // ListUsersResponse represents the response for listing users
-// @Description Response with list of users
 type ListUsersResponse struct {
 	Success bool           `json:"success" example:"true"`
 	Data    []UserResponse `json:"data"`
 }
 
 // QRCodeResponse is returned by GET /session/qr.
-// @Description Current QR code for an in-progress auth session.
 type QRCodeResponse struct {
 	Success bool   `json:"success" example:"true"`
 	Qrcode  string `json:"qrcode" example:"data:image/png;base64,..."`
@@ -325,7 +305,6 @@ type DownloadFileBody struct {
 }
 
 // UserResponse represents a user row returned by GET /admin/users.
-// @Description Summary fields for a user in the system
 type UserResponse struct {
 	ID            string `json:"id" example:"a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0"`
 	Name          string `json:"name" example:"John Doe"`
@@ -341,7 +320,6 @@ type UserResponse struct {
 // Secrets (auth_token, s3 keys, proxy password) are never returned raw:
 // `auth_configured` / `proxy_configured` expose presence as a boolean and
 // `proxy_url` is emitted with the password replaced by ***.
-// @Description Detailed user record with secrets masked.
 type UserDetail struct {
 	ID              string   `json:"id" example:"a7e5dd6b-8b3e-4035-ba87-3f96a0e3f5c0"`
 	Name            string   `json:"name" example:"John Doe"`
@@ -364,14 +342,12 @@ type UserDetail struct {
 }
 
 // UserDetailResponse wraps UserDetail in the standard response envelope.
-// @Description GET /admin/users/{userid} response envelope.
 type UserDetailResponse struct {
 	Success bool       `json:"success" example:"true"`
 	Data    UserDetail `json:"data"`
 }
 
 // HealthResponse reports liveness + readiness metadata.
-// @Description Snapshot of process + connection health.
 type HealthResponse struct {
 	Success        bool   `json:"success" example:"true"`
 	Status         string `json:"status" example:"ok"`
