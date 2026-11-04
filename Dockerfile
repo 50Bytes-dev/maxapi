@@ -45,6 +45,9 @@ WORKDIR /app
 COPY --from=builder /app/maxapi         /app/
 COPY --from=builder /app/static         /app/static/
 COPY --from=builder /app/maxapi.service /app/maxapi.service
+# The Swagger UI in static/api/ ships with its Apache-2.0 license.
+COPY --from=builder /app/LICENSE        /app/
+COPY --from=builder /app/third_party/swagger-ui/LICENSE /app/third_party/swagger-ui/
 
 RUN chmod +x /app/maxapi && \
     chmod -R 755 /app && \
