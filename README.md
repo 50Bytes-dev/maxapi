@@ -182,6 +182,7 @@ See [API.md](API.md) for the complete API documentation.
 - `GET /session/qr` - Get current QR code (base64 PNG) for an in-progress auth session
 - `POST /session/disconnect` - Disconnect / cancel in-progress QR session
 - `POST /session/logout` - Logout and remove user
+- `POST /session/sync` - Log in again with the stored MAX login and return MAX's login data (also as a `Sync` event)
 - `GET /session/status` - Connection / authentication status, account pause
 - `POST /session/resume` - Lift the pause MAX's limit/restriction errors put on the MAX account
 
@@ -206,12 +207,11 @@ See [API.md](API.md) for the complete API documentation.
 #### Users
 - `POST /user/check` - Check phone numbers
 - `POST /user/info` - Get user info
-- `POST /user/avatar` - Get avatar URL
 - `POST /user/presence` - Send typing indicator
+- `GET /user/contacts` - Get contacts
 
 #### Groups
 - `POST /group/create` - Create group
-- `GET /group/list` - List groups
 - `POST /group/info` - Get group info
 - `POST /group/invitelink` - Get invite link
 - `POST /group/join` - Join group
@@ -223,6 +223,7 @@ See [API.md](API.md) for the complete API documentation.
 #### Webhooks
 - `POST /webhook` - Set webhook
 - `GET /webhook` - Get webhook
+- `PUT /webhook` - Set webhook (same as `POST /webhook`)
 - `DELETE /webhook` - Delete webhook
 
 #### Admin

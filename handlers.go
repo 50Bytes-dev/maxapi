@@ -2180,6 +2180,13 @@ func (s *server) EditUser() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
 		}
+		// Events read the webhook and the subscription from the cached user
+		// info only: without this the new values waited for a restart.
+		refreshCachedUser(s.tokenForUser(userID), map[string]string{
+			"Name":    msg.Name,
+			"Webhook": msg.Webhook,
+			"Events":  msg.Events,
+		})
 
 		response := map[string]interface{}{
 			"success": true,
@@ -2193,18 +2200,9 @@ func (s *server) EditUser() http.HandlerFunc {
 // DeleteUser deletes a user
 func (s *server) DeleteUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		userID := vars["userid"]
+		userID := mux.Vars(r)["userid"]
 
-		// Disconnect if connected (non-blocking send)
-		if !clientManager.SendKill(userID) {
-			clientManager.DeleteKillChannel(userID)
-		}
-
-		// The user's phone lookups go with the row; a pause of its MAX
-		// account stays (see pauses.go).
-		_, err := s.db.Exec("DELETE FROM users WHERE id=$1", userID)
-		if err != nil {
+		if err := s.removeUser(userID); err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
 		}

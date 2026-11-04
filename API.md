@@ -199,7 +199,7 @@ Content-Type: application/json
 
 {
     "chatId": 123456789,  // or use "phone"
-    "phone": "+79001234567",  // alternative to chatId
+    "phone": "79001234567",  // alternative to chatId
     "text": "Hello, World!",
     "replyTo": 987654321,  // optional, message ID to reply to
     "notify": true
@@ -210,14 +210,24 @@ Response:
 ```json
 {
     "success": true,
-    "messageId": 111222333,
+    "messageId": "115478893120847321",
     "chatId": 123456789
 }
 ```
 
+`messageId` is MAX's id of the new message, a string. `chatId` is the chat
+the message went to: for a send by `phone`, the dialog of the account and the
+recipient.
+
 One of `chatId` or `phone` is required. When both are set, `chatId` wins.
 `chatId: 0` is not a recipient: a request without one is rejected with
 `invalid_target` instead of landing in the account's own "Favorites" chat.
+
+`phone` is the number with country code, digits only, for example
+`79001234567`. The gateway checks only its form, 10 to 15 digits with an
+optional leading `+`, and passes the string to MAX exactly as given: a `+` is
+not stripped, and spaces, dashes or brackets make the number malformed
+(`404` `address_not_found` without a MAX call).
 
 The endpoint answers within ~9.5 s: the phone lookup waits at most 4 s for
 MAX, the send at most 5 s for MAX to acknowledge it, and each database call
@@ -233,7 +243,7 @@ Errors use the [error envelope](#error-responses) with a delivery outcome
 | `400` | `invalid_target` | Neither `chatId` nor `phone` given | No |
 | `400` | `INVALID_INPUT` | Body is not valid JSON | No |
 | `422` | `send_rejected` | The MAX account is [paused](#account-pause): no MAX call was made. `paused: true`, `pauseReason: "spam"`, no `upstreamCode` | No |
-| `404` | `address_not_found` | `phone` is malformed, or MAX has no user with it: MAX answered the lookup without a usable contact or with its `not.found` error (`upstreamCode: "not.found"`), or the [lookup cache](#phone-lookup-cache) holds a `not.found` younger than 30 days (no MAX call, no `upstreamCode`) | No |
+| `404` | `address_not_found` | `phone` is malformed (not 10–15 digits with an optional leading `+`; no MAX call, no `upstreamCode`), or MAX has no user with it: MAX answered the lookup without a usable contact or with its `not.found` error (`upstreamCode: "not.found"`), or the [lookup cache](#phone-lookup-cache) holds a `not.found` younger than 30 days (no MAX call, no `upstreamCode`) | No |
 | `503` | `lookup_failed` | Phone lookup timed out, the connection failed, or MAX answered it with an error other than `not.found`. A limit or restriction error also pauses the account | No |
 | `422` | `send_rejected` | MAX answered the send with an error. A limit or restriction error also pauses the account; any other error on a send to a cached contact drops it from the cache | No |
 | `500` | `send_failed` | No answer to the send in time, or the session was lost after the frame went out | Unknown — do not resend automatically |
@@ -274,9 +284,9 @@ MAX's answer in its database, per gateway user:
   leaves the next send to look the number up again.
 
 The key is the phone exactly as sent in `phone` (`+79001234567` and
-`79001234567` are different keys). The cache is deleted with the user. Each
-cache read or write waits at most 200 ms for the database, so the endpoint
-still answers within ~9.5 s.
+`79001234567` are different keys, and each is looked up in MAX as sent). The
+cache is deleted with the user. Each cache read or write waits at most 200 ms
+for the database, so the endpoint still answers within ~9.5 s.
 
 #### Account pause
 
@@ -448,7 +458,7 @@ Response:
     "success": true,
     "messages": [
         {
-            "id": 111222333,
+            "id": "115478893120847321",
             "chatId": 123456789,
             "sender": 987654321,
             "text": "Message text",
@@ -537,7 +547,7 @@ POST /user/check
 Content-Type: application/json
 
 {
-    "phone": ["+79001234567", "+79007654321"]
+    "phone": ["79001234567", "79007654321"]
 }
 ```
 
@@ -547,13 +557,13 @@ Response:
     "success": true,
     "users": [
         {
-            "phone": "+79001234567",
+            "phone": "79001234567",
             "exists": true,
             "maxUserId": 123456789,
             "name": "John Doe"
         },
         {
-            "phone": "+79007654321",
+            "phone": "79007654321",
             "exists": false,
             "maxUserId": 0,
             "error": "Timeout Error: Request timed out (timeout)"
@@ -567,7 +577,9 @@ contact, or its `not.found` error). With `error` the lookup itself failed
 (malformed number, timeout, connection or another MAX error), so whether the
 user exists is unknown. This endpoint always asks MAX: it neither uses nor
 fills the [lookup cache](#phone-lookup-cache), and it does not pause the
-account.
+account. The numbers take the same form as `phone` of
+[Send Text Message](#send-text-message) and go to MAX as given; `phone` in
+the answer echoes each one as sent.
 
 ### Get User Info
 
@@ -577,25 +589,6 @@ Content-Type: application/json
 
 {
     "userId": 123456789
-}
-```
-
-### Get User Avatar
-
-```http
-POST /user/avatar
-Content-Type: application/json
-
-{
-    "userId": 123456789
-}
-```
-
-Response: 
-```json
-{
-    "success": true,
-    "avatarUrl": "https://..."
 }
 ```
 
@@ -744,7 +737,9 @@ DELETE /webhook
 
 ## Admin Endpoints
 
-All admin endpoints require the admin token in the `Authorization` header.
+All admin endpoints require the admin token in the `Authorization` header,
+raw, without `Bearer`. A missing or wrong one answers `401`
+`{"success": false, "error": "unauthorized"}` without `code`.
 
 ### List Users
 
@@ -752,6 +747,28 @@ All admin endpoints require the admin token in the `Authorization` header.
 GET /admin/users
 Authorization: <admin_token>
 ```
+
+Response (`data` is `null` when there are no users):
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "id": "a1b2c3d4-...",
+            "name": "Acme Bot",
+            "token": "<user_token>",
+            "maxUserId": 123456789,
+            "webhook": "https://example.com/webhook",
+            "events": "Message,ReadReceipt",
+            "connected": 1,
+            "authenticated": true
+        }
+    ]
+}
+```
+
+`connected` is the flag stored in the database (`0` or `1`), `authenticated`
+whether an auth token is stored; `maxUserId` is `null` before the first login.
 
 ### Get User by ID
 
@@ -767,31 +784,36 @@ GET /admin/users/{userid}
 Authorization: <admin_token>
 ```
 
-Response:
+Response — the object itself, without `success` and without a `data`
+wrapper:
 ```json
 {
-    "success": true,
-    "data": {
-        "id": "a1b2c3d4-...",
-        "name": "Acme Bot",
-        "token": "<user_token>",
-        "webhook": "https://example.com/webhook",
-        "max_user_id": 123456789,
-        "device_id": "uuid-...",
-        "connected": true,
-        "auth_configured": true,
-        "events": ["Message", "ReadReceipt"],
-        "proxy_configured": true,
-        "proxy_url": "http://user:***@proxy.internal:3128",
-        "history": 100,
-        "s3_enabled": false,
-        "s3_endpoint": "",
-        "s3_region": "",
-        "s3_bucket": "",
-        "media_delivery": "base64"
-    }
+    "id": "a1b2c3d4-...",
+    "name": "Acme Bot",
+    "token": "<user_token>",
+    "webhook": "https://example.com/webhook",
+    "max_user_id": 123456789,
+    "device_id": "uuid-...",
+    "connected": true,
+    "connected_flag": true,
+    "auth_configured": true,
+    "events": ["Message", "ReadReceipt"],
+    "proxy_configured": true,
+    "proxy_url": "http://user:***@proxy.internal:3128",
+    "history": 100,
+    "s3_enabled": false,
+    "s3_endpoint": "",
+    "s3_region": "",
+    "s3_bucket": "",
+    "media_delivery": "base64"
 }
 ```
+
+`connected` says whether the user's MAX session is live now, `connected_flag`
+what the database holds. `max_user_id` is `0` before the first login.
+
+Errors: `404` `NOT_FOUND` (no such user), `500` `INTERNAL_ERROR` (database
+error).
 
 ### Create User
 
@@ -807,6 +829,20 @@ Content-Type: application/json
 }
 ```
 
+Response:
+```json
+{
+    "success": true,
+    "id": "a1b2c3d4-...",
+    "token": "<user_token>",
+    "name": "User Name"
+}
+```
+
+Nothing is validated; `events` is stored as given (see
+[Webhook Events](#webhook-events)). Errors: `400` (body is not JSON), `500`
+(database error), both without `code`.
+
 ### Edit User
 
 ```http
@@ -817,9 +853,26 @@ Content-Type: application/json
 {
     "name": "New Name",
     "webhook": "https://...",
-    "events": "Message,ReadReceipt,Connected"
+    "events": "Message,ReadReceipt"
 }
 ```
+
+Response:
+```json
+{ "success": true, "message": "User updated" }
+```
+
+- All three fields are overwritten; a field left out becomes `""` (an empty
+  `webhook` sends nothing to the user's webhook, empty `events` sends no
+  events at all). `events` is stored as given.
+- The change takes effect at once, without a restart: the user's cached name,
+  webhook and events are updated too, so its next event already goes to the
+  new webhook, under the new subscription, with the new `instanceName`.
+- `POST /session/connect` later overwrites `events` with its `subscribe`.
+- An unknown `userid` answers `200` as well; nothing changes.
+
+Errors: `400` (body is not JSON), `500` (database error), both without
+`code`.
 
 ### Delete User
 
@@ -828,41 +881,83 @@ DELETE /admin/users/{userid}
 Authorization: <admin_token>
 ```
 
+Response:
+```json
+{ "success": true, "message": "User deleted" }
+```
+
+- The user is deleted with its stored MAX auth token and its
+  [phone lookups](#phone-lookup-cache). A [pause](#account-pause) of its MAX
+  account stays.
+- Its reconnect loop and MAX session are stopped and its clients dropped.
+  The session is only closed, not logged out in MAX (`POST /session/logout`
+  does that).
+- Its token is dropped from the cache at once: the next call with it answers
+  `401`, no restart needed.
+- No webhook is sent.
+- An unknown `userid` answers `200` as well.
+
+Errors: `500` (database error, without `code`). The loop, the clients and the
+cached token are dropped even then, but the row stays, so the token keeps
+working.
+
 ---
 
 ## Webhook Events
 
-Subscribe to these events via the `subscribe` array in `/session/connect`:
+Subscribe to these events via the `subscribe` array of `/session/connect`
+(unknown names are dropped there) or the comma-separated `events` of
+`POST /admin/users` and `PUT /admin/users/{userid}` (stored as given; unknown
+names never match):
 
 | Event | Description |
 |-------|-------------|
-| `Message` | New incoming message |
-| `MessageEdit` | Message was edited |
-| `MessageDelete` | Message was deleted |
+| `Message` | New message in one of the account's chats (MAX opcode 128; the gateway does not filter by sender) |
+| `MessageEdit` | Message was edited (opcode 128 with status `EDITED`) |
+| `MessageDelete` | Message was deleted (opcode 128 with status `REMOVED`) |
 | `ReadReceipt` | Messages were read |
-| `Connected` | Successfully connected |
-| `Disconnected` | Connection lost |
-| `Reconnecting` | Reconnect attempt in progress (first + every 10th attempt) |
-| `ReconnectExhausted` | Reconnect budget (`MAX_CONNECT_RETRIES`) exhausted; session stopped |
+| `Sync` | The session is logged in: after a connect with a stored token, after `QRAuthorized`, after a reconnect, after `POST /session/sync`. Payload: `maxUserID`, `reconnect` (true after a reconnect), `manual` (true, only after `POST /session/sync`), plus every field of MAX's login answer (`profile`, `chats`, `contacts`, …) |
+| `Disconnected` | MAX pushed opcode 3, telling the client to reconnect. Not sent when the socket drops: a dropped session gives `Reconnecting` |
+| `Reconnecting` | The session dropped and the reconnect loop is logging in again (first attempt and every 10th). Payload: `attempt`, `max` (`MAX_CONNECT_RETRIES`, `0` = none) |
+| `ReconnectExhausted` | Reconnect budget (`MAX_CONNECT_RETRIES`) exhausted; session stopped, the token is kept. Payload: `attempts`, `reason` (`"max_reconnect_attempts"`) |
 | `QRGenerated` | QR code available (initial or refreshed). Payload: `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt`. `GET /session/qr` returns the same PNG for pull consumers. |
-| `QRScanned` | User scanned QR in the mobile app |
-| `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
-| `QRExpired` | QR refresh budget exhausted or session cancelled |
-| `AuthExpired` | The reconnect loop stopped, see [Reconnect](#reconnect): MAX refused the token with an auth error (the token is erased, a new QR login is needed), or refused the reconnect login 3 times in a row (the token is kept, `POST /session/connect` tries again). `reason` carries the error text, MAX's code, `"login timed out"` or `"login connection lost"` |
-| `LoggedOut` | MAX ended the session (opcode 20 pushed by the server): the user is deleted and its reconnect loop stops |
+| `QRScanned` | User scanned QR in the mobile app. Payload: `trackId` |
+| `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows). Payload: `authToken`, the account's new MAX auth token (a secret) |
+| `QRExpired` | The QR login ended without logging in: the QR ran out and could not be reissued (10 reissues at most), or MAX refused to confirm the scanned QR (its error text in `reason`). Not sent when `POST /session/disconnect` cancels the QR login |
+| `AuthExpired` | The session stopped and will not reconnect by itself, see [Reconnect](#reconnect): MAX refused the token with an auth error on a connect or reconnect (the token is erased, a new QR login is needed), or refused the reconnect login 3 times in a row (the token is kept, `POST /session/connect` tries again). `reason` carries the error text, MAX's code, `"login timed out"` or `"login connection lost"` |
+| `LoggedOut` | MAX ended the session (opcode 20 pushed by the server): the user is deleted and its reconnect loop stops. Not sent for `POST /session/logout` or `DELETE /admin/users/{userid}` |
 | `ChatUpdate` | Chat was updated |
 | `Typing` | User is typing |
 | `ReactionChange` | Reaction was changed |
 | `ContactUpdate` | Contact was updated |
 | `PresenceUpdate` | User presence changed |
-| `FileReady` | File upload completed |
-| `HistorySync` | History sync completed |
 | `All` | All events |
+
+`Connected`, `FileReady` and `HistorySync` are accepted in a subscription but
+never sent.
 
 ### Webhook Payload Format
 
-Every webhook body (HTTP JSON and RabbitMQ JSON) carries an identity block in
-addition to the event-specific `event` payload:
+The HTTP webhook body is JSON when the gateway runs with `WEBHOOK_FORMAT=json`;
+otherwise it is a form (`application/x-www-form-urlencoded`) with the same
+fields, nested values JSON-encoded. The same body goes to the global webhook
+(`-globalwebhook`) and to RabbitMQ (always JSON) when they are configured.
+
+Every body carries `type` and an identity block: `userID` and `instanceID`
+(both the gateway user's id), `instanceName` (its name) and `eventTimestamp`
+(Unix seconds, set when the delivery starts; a retry keeps it). The rest
+depends on the event:
+
+- **MAX notifications** — `Message`, `MessageEdit`, `MessageDelete`,
+  `ReadReceipt`, `ChatUpdate`, `Typing`, `ReactionChange`, `ContactUpdate`,
+  `PresenceUpdate` and `Disconnected` — carry `opcode` and MAX's payload as
+  MAX sent it in `event`. `Message` adds media fields from the message's
+  attachments (`mediaType`, `mediaUrl`, `base64`, `mimeType`, `s3`,
+  `videoId`, `fileId`, `fileName`, `audioId`, …).
+- **The gateway's own events** — `Sync`, `Reconnecting`,
+  `ReconnectExhausted`, `QRGenerated`, `QRScanned`, `QRAuthorized`,
+  `QRExpired`, `AuthExpired`, `LoggedOut` — carry no `opcode` and no `event`,
+  only the fields listed for them in the table above, at the top level.
 
 ```json
 {
@@ -871,7 +966,7 @@ addition to the event-specific `event` payload:
     "event": {
         "chatId": 123456789,
         "message": {
-            "id": 111222333,
+            "id": "115478893120847321",
             "sender": 987654321,
             "text": "Hello!",
             "time": 1699999999999,
@@ -885,16 +980,29 @@ addition to the event-specific `event` payload:
 }
 ```
 
+```json
+{
+    "type": "Reconnecting",
+    "attempt": 1,
+    "max": 0,
+    "userID": "a1b2c3d4-...",
+    "instanceID": "a1b2c3d4-...",
+    "instanceName": "My Instance",
+    "eventTimestamp": 1700000000
+}
+```
+
 RabbitMQ payloads additionally include `"serverHost"` (the hostname of the
 MaxAPI instance that emitted the event), and — when `RABBITMQ_EXCHANGE` is
 configured — publish with routing key = event type, headers
 `x-instance-id` and `x-event-type`, `ContentType: application/json`,
 `DeliveryMode: persistent`, `MessageId: <uuid>`, `Timestamp: <now>`.
 
-**The webhook payload never contains the user API `token`.** Identify the
-MaxAPI user by `instanceID` and authenticate your receiver via your own
-mechanism (shared secret in the `Authorization` header, HMAC over the body,
-mTLS, …).
+**The webhook payload never contains the user API `token`.** It does carry
+other secrets: `QRAuthorized` the MAX auth token, `Sync` and the message
+events the owner's chats and messages. Identify the MaxAPI user by
+`instanceID` and authenticate your receiver via your own mechanism (shared
+secret in the `Authorization` header, HMAC over the body, mTLS, …).
 
 ### Webhook Delivery Guarantees
 
@@ -902,12 +1010,15 @@ The HTTP client retries delivery with exponential backoff:
 
 - Triggers: network errors, HTTP `5xx`, `408`, `429`.
 - `4xx` is treated as a client contract failure and is delivered exactly once.
-- Backoff: `WEBHOOK_RETRY_DELAY × 2^(attempt-1)` seconds, up to
-  `WEBHOOK_RETRY_COUNT` attempts. Defaults: 5 attempts starting at 30 s.
+- Backoff: before attempt *n* (from the second) the gateway waits
+  `WEBHOOK_RETRY_DELAY × 2^(n-1)` seconds, up to `WEBHOOK_RETRY_COUNT`
+  attempts. Defaults: 5 attempts; the first retry waits 60 s, then 120, 240
+  and 480 s.
+- Each event is delivered on its own goroutine, so events may arrive out of
+  order.
 
-Multipart webhooks (file attachments) share the same policy and are additionally
-guarded by a per-user concurrency semaphore (`MAXAPI_USER_CONCURRENCY`) so a
-slow subscriber cannot consume unbounded file descriptors for a single user.
+Events are never sent as multipart: media of a message travel in the
+`Message` body's fields (see above).
 
 ### RabbitMQ Delivery Guarantees
 
@@ -951,35 +1062,44 @@ Response (`200 OK` when healthy, `503 Service Unavailable` when DB is down):
 
 ## Error Responses
 
-All error responses follow this format:
+Every error body has this form:
 
 ```json
 {
     "success": false,
-    "error": "human-readable description",
-    "code": "MACHINE_CODE"
+    "error": "human-readable description"
 }
 ```
 
-`code` is a stable machine-readable constant that clients can branch on; the
-`error` text is free-form and may evolve. `POST /chat/send/text` uses its own
-lowercase delivery outcome codes, see [Send Text Message](#send-text-message).
-Other known codes:
+`error` is free-form text, often with MAX's error inside, and may change: do
+not branch on it. Most errors carry nothing else and are told apart by their
+HTTP status. Only three endpoints add a stable machine-readable `code`:
 
-| Code | Meaning |
-|------|---------|
-| `INVALID_INPUT` | Malformed payload, missing required field, bad parameter |
-| `UNAUTHORIZED` | Missing/invalid admin or user token |
-| `FORBIDDEN` | Authenticated but not allowed |
-| `NOT_FOUND` | Resource does not exist |
-| `NOT_CONNECTED` | User has no active MAX session |
-| `AUTH_EXPIRED` | Stored auth token is no longer valid — re-authenticate |
-| `INTERNAL_ERROR` | Server-side failure |
+| Endpoint | `code` |
+|----------|--------|
+| `POST /chat/send/text` | The delivery outcome codes `not_connected`, `invalid_target`, `address_not_found`, `lookup_failed`, `send_rejected`, `send_failed`, and `INVALID_INPUT`; also `upstreamCode` and the [pause](#account-pause) fields. See [Send Text Message](#send-text-message) |
+| `POST /session/resume` | `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`) |
+| `GET /admin/users/{userid}` | `NOT_FOUND` (`404`), `INTERNAL_ERROR` (`500`) |
 
-Common HTTP status codes:
-- `400` - Bad Request (invalid parameters)
-- `401` - Unauthorized (invalid token)
-- `404` - Not Found
-- `409` - Conflict (e.g., already connected)
-- `500` - Internal Server Error
-- `503` - Service Unavailable (not connected)
+Treat a code you do not know as a failure of the call.
+
+HTTP status codes:
+- `400` - The body is missing or not JSON, or a required field is missing or `0`
+- `401` - Missing or wrong admin token, or unknown user token:
+  `{"success": false, "error": "unauthorized"}`, without `code`. For a user
+  token that worked before, the user was deleted (`DELETE /admin/users/{userid}`,
+  `POST /session/logout` or `LoggedOut`)
+- `404` - `address_not_found` of `POST /chat/send/text`, "chat not found" of
+  `POST /group/info` and `POST /group/invitelink`, `NOT_FOUND` of
+  `GET /admin/users/{userid}`. A path the gateway does not route answers a
+  plain-text `404`, not JSON
+- `422` - `send_rejected` of `POST /chat/send/text`
+- `500` - Database error, MAX refused the call or did not answer it in time,
+  `send_failed` of `POST /chat/send/text`, or `POST /session/connect` without
+  `immediate` that did not connect within 5 s
+- `503` - No live MAX session ("not connected"; `not_connected` on
+  `POST /chat/send/text`), `lookup_failed`, or `GET /health` with the
+  database down
+
+`409` is never sent: a repeated `POST /session/connect` answers `200` with
+`alreadyConnected`.

@@ -22,10 +22,8 @@ info:
     - `/health` takes no authentication.
 
     A missing or unknown token answers `401` `{"success": false, "error": "unauthorized"}`
-    without `code`. Account tokens are cached in memory: after
-    `DELETE /admin/users/{userid}` a token that was used before keeps passing
-    authentication until the gateway restarts (the calls then find no account
-    row); `LoggedOut` and `POST /session/logout` drop it from the cache at once.
+    without `code`; on an account call it means the account was deleted
+    (`DELETE /admin/users/{userid}`, `POST /session/logout` or `LoggedOut`).
 
     ## Errors
     Every error body is `ErrorResponse` (`success` false, `error`). Only
@@ -197,10 +195,8 @@ paths:
       summary: Update an account
       description: |-
         Overwrites `name`, `webhook` and `events` with the body's values, an
-        absent field with "". Succeeds for an unknown id too. A token used since
-        the last restart keeps its cached webhook and events until a restart or
-        until the account itself sets them (`POST /webhook`,
-        `POST /session/connect`).
+        absent field with "". Succeeds for an unknown id too. The next event of
+        the account already goes to the new webhook and subscription.
       tags:
       - admin
       security:
@@ -239,9 +235,8 @@ paths:
         Stops the account's MAX session and deletes the account with its MAX
         login and phone lookup cache. Succeeds for an unknown id too. No webhook
         is sent, and the session is not logged out in MAX (`POST /session/logout`
-        does that). A pause of its MAX account stays. A token used since the last
-        restart keeps passing authentication until a restart (see the
-        description at the top).
+        does that). A pause of its MAX account stays. The account's token
+        answers `401` from then on.
       tags:
       - admin
       security:

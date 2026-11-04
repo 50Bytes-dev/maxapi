@@ -814,24 +814,61 @@ func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
 		}
 	}
 
-	// 3. Delete from DB. Its phone lookups go with it; a pause of its MAX
-	// account stays, for the next gateway user logged into it (pauses.go).
-	token := s.tokenForUser(userID)
-	_, err = s.db.Exec("DELETE FROM users WHERE id=$1", userID)
-	if err != nil {
+	// 3. Delete from DB, stop the loop and forget the user.
+	if err := s.removeUser(userID); err != nil {
 		log.Error().Err(err).Str("userID", userID).Msg("Failed to delete user from DB")
 	} else {
 		log.Info().Str("userID", userID).Msg("User deleted from DB")
 	}
+}
 
-	// 4. Non-blocking signal to any running loop goroutine, before
-	// cleanupClient drops the kill channel: a signal sent after it reaches no
-	// loop, which then goes on reconnecting with the deleted user's token.
+// removeUser deletes gateway user userID: its row (its phone lookups go with
+// it; a pause of its MAX account stays, for the next gateway user logged into
+// it, see pauses.go), its running loop and clients, and its cached user info,
+// which is what lets its token in: without dropping it the deleted token went
+// on authenticating until a restart. The loop, clients and cache go even when
+// the row could not be deleted: the next request reads the row again. An
+// unknown userID is no error.
+func (s *server) removeUser(userID string) error {
+	token := s.tokenForUser(userID)
+	_, err := s.db.Exec("DELETE FROM users WHERE id=$1", userID)
+
+	// Non-blocking signal to any running loop goroutine, before cleanupClient
+	// drops the kill channel: a signal sent after it reaches no loop, which
+	// then goes on reconnecting with the deleted user's token. This may run
+	// on the MaxClient's own receive goroutine, so the client is never closed
+	// here: the kill signal makes the user's loop goroutine do it.
 	clientManager.SendKill(userID)
 	cleanupClient(userID)
 	if token != "" {
 		userinfocache.Delete(token)
 	}
+	return err
+}
+
+// refreshCachedUser sets fields of the cached user info of token, when it is
+// cached. A copy is stored: requests and events read the cached map
+// concurrently.
+func refreshCachedUser(token string, fields map[string]string) {
+	if token == "" {
+		return
+	}
+	cached, ok := userinfocache.Get(token)
+	if !ok {
+		return
+	}
+	old, ok := cached.(Values)
+	if !ok {
+		return
+	}
+	m := make(map[string]string, len(old.m)+len(fields))
+	for k, v := range old.m {
+		m[k] = v
+	}
+	for k, v := range fields {
+		m[k] = v
+	}
+	userinfocache.Set(token, Values{m}, cache.NoExpiration)
 }
 
 // handleEvent handles MAX events and sends webhooks
