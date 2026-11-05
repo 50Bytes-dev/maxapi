@@ -52,7 +52,20 @@ var migrations = []Migration{
 		Name:  "add_account_pauses",
 		UpSQL: addAccountPausesSQL,
 	},
+	{
+		ID:    8,
+		Name:  "add_max_profile",
+		UpSQL: addMaxProfileSQL,
+	},
 }
+
+// max_name and max_photo are the MAX account's name and photo from the last
+// login, for GET /session/status without a session (C11). SQLite adds the
+// columns in applySQLiteMigration.
+const addMaxProfileSQL = `
+ALTER TABLE users ADD COLUMN IF NOT EXISTS max_name TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS max_photo TEXT DEFAULT '';
+`
 
 // phone_lookups caches MAX's answers to the phone lookup (opcode 46) per
 // gateway user, keyed by the phone exactly as it went to MAX (see lookups.go).
@@ -315,7 +328,7 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 	}()
 
 	// Apply migration based on database type
-		if db.DriverName() == "sqlite" {
+	if db.DriverName() == "sqlite" {
 		err = applySQLiteMigration(tx, migration)
 	} else {
 		_, err = tx.Exec(migration.UpSQL)
@@ -342,7 +355,7 @@ func applySQLiteMigration(tx *sqlx.Tx, migration Migration) error {
 	switch migration.ID {
 	case 1:
 		// Initial schema for SQLite
-			err = createTableIfNotExistsSQLite(tx, "users", `
+		err = createTableIfNotExistsSQLite(tx, "users", `
                 CREATE TABLE users (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -367,34 +380,34 @@ func applySQLiteMigration(tx *sqlx.Tx, migration Migration) error {
 
 	case 2:
 		// S3 support columns for SQLite
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_enabled", "BOOLEAN DEFAULT 0")
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_endpoint", "TEXT DEFAULT ''")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_region", "TEXT DEFAULT ''")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_bucket", "TEXT DEFAULT ''")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_access_key", "TEXT DEFAULT ''")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_secret_key", "TEXT DEFAULT ''")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_path_style", "BOOLEAN DEFAULT 1")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_public_url", "TEXT DEFAULT ''")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "media_delivery", "TEXT DEFAULT 'base64'")
-			}
-			if err == nil {
-				err = addColumnIfNotExistsSQLite(tx, "users", "s3_retention_days", "INTEGER DEFAULT 30")
-			}
+		err = addColumnIfNotExistsSQLite(tx, "users", "s3_enabled", "BOOLEAN DEFAULT 0")
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_endpoint", "TEXT DEFAULT ''")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_region", "TEXT DEFAULT ''")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_bucket", "TEXT DEFAULT ''")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_access_key", "TEXT DEFAULT ''")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_secret_key", "TEXT DEFAULT ''")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_path_style", "BOOLEAN DEFAULT 1")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_public_url", "TEXT DEFAULT ''")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "media_delivery", "TEXT DEFAULT 'base64'")
+		}
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "s3_retention_days", "INTEGER DEFAULT 30")
+		}
 
 	case 4:
 		err = addColumnIfNotExistsSQLite(tx, "users", "qr_track_id", "TEXT DEFAULT ''")
@@ -410,7 +423,7 @@ func applySQLiteMigration(tx *sqlx.Tx, migration Migration) error {
 
 	case 3:
 		// Message history table for SQLite
-			err = createTableIfNotExistsSQLite(tx, "message_history", `
+		err = createTableIfNotExistsSQLite(tx, "message_history", `
 				CREATE TABLE message_history (
 					id INTEGER PRIMARY KEY AUTOINCREMENT,
 					user_id TEXT NOT NULL,
@@ -424,11 +437,17 @@ func applySQLiteMigration(tx *sqlx.Tx, migration Migration) error {
 				reply_to_id TEXT,
 					UNIQUE(user_id, message_id)
 				)`)
-			if err == nil {
-				_, err = tx.Exec(`
+		if err == nil {
+			_, err = tx.Exec(`
 					CREATE INDEX IF NOT EXISTS idx_message_history_user_chat_timestamp 
 				ON message_history (user_id, chat_id, timestamp DESC)`)
-			}
+		}
+
+	case 8:
+		err = addColumnIfNotExistsSQLite(tx, "users", "max_name", "TEXT DEFAULT ''")
+		if err == nil {
+			err = addColumnIfNotExistsSQLite(tx, "users", "max_photo", "TEXT DEFAULT ''")
+		}
 
 	default:
 		// For any future migrations, try to execute the SQL directly

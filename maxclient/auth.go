@@ -192,16 +192,6 @@ func (c *Client) Login(authToken string) (map[string]interface{}, error) {
 		}
 	}
 
-	contactIDs := c.extractParticipantIDsFromPayload(resp.Payload)
-	if len(contactIDs) > 0 {
-		contacts, err := c.fetchContactsByIDs(contactIDs)
-		if err != nil {
-			c.Logger.Warn().Err(err).Msg("Failed to fetch contacts")
-		} else {
-			resp.Payload["contacts"] = contacts
-		}
-	}
-
 	return resp.Payload, nil
 }
 
@@ -232,89 +222,7 @@ func (c *Client) Sync() (map[string]interface{}, error) {
 		c.Logger.Info().Int("count", len(chatsRaw)).Msg("Got chats from sync")
 	}
 
-	contactIDs := c.extractParticipantIDsFromPayload(resp.Payload)
-	if len(contactIDs) > 0 {
-		contacts, err := c.fetchContactsByIDs(contactIDs)
-		if err != nil {
-			c.Logger.Warn().Err(err).Msg("Failed to fetch contacts")
-		} else {
-			resp.Payload["contacts"] = contacts
-		}
-	}
-
 	return resp.Payload, nil
-}
-
-// extractParticipantIDsFromPayload extracts unique participant IDs from chats in payload
-func (c *Client) extractParticipantIDsFromPayload(payload map[string]interface{}) []int64 {
-	idSet := make(map[int64]bool)
-
-	chatsRaw, ok := payload["chats"].([]interface{})
-	if !ok {
-		return nil
-	}
-
-	for _, chatRaw := range chatsRaw {
-		chat, ok := chatRaw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if participants, ok := chat["participants"].(map[string]interface{}); ok {
-			for idStr := range participants {
-				if parsed, err := parseInt64(idStr); err == nil && parsed > 0 {
-					idSet[parsed] = true
-				}
-			}
-		}
-	}
-
-	ids := make([]int64, 0, len(idSet))
-	for id := range idSet {
-		ids = append(ids, id)
-	}
-	return ids
-}
-
-// parseInt64 parses a string to int64
-func parseInt64(s string) (int64, error) {
-	var result int64
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, ErrInvalidResponse
-		}
-		result = result*10 + int64(c-'0')
-	}
-	return result, nil
-}
-
-// fetchContactsByIDs fetches contacts by their IDs using opcode 32
-func (c *Client) fetchContactsByIDs(contactIDs []int64) ([]map[string]interface{}, error) {
-	if len(contactIDs) == 0 {
-		return nil, nil
-	}
-
-	payload := map[string]interface{}{
-		"contactIds": contactIDs,
-	}
-
-	c.Logger.Info().Int("count", len(contactIDs)).Msg("Fetching contacts by IDs")
-
-	resp, err := c.sendAndWait(OpContactInfo, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	var contacts []map[string]interface{}
-	if contactsRaw, ok := resp.Payload["contacts"].([]interface{}); ok {
-		for _, contactRaw := range contactsRaw {
-			if contactMap, ok := contactRaw.(map[string]interface{}); ok {
-				contacts = append(contacts, contactMap)
-			}
-		}
-	}
-
-	c.Logger.Info().Int("count", len(contacts)).Msg("Fetched contacts")
-	return contacts, nil
 }
 
 // Logout logs out from the current session

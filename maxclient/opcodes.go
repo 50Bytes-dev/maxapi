@@ -48,12 +48,13 @@ const (
 	OpChatMembersUpdate Opcode = 77
 
 	// Message Operations
-	OpMsgSend   Opcode = 64
-	OpMsgTyping Opcode = 65
-	OpMsgDelete Opcode = 66
-	OpMsgEdit   Opcode = 67
-	OpMsgGet    Opcode = 71
-	OpMsgSearch Opcode = 73
+	OpMsgSend    Opcode = 64
+	OpMsgTyping  Opcode = 65
+	OpMsgDelete  Opcode = 66
+	OpMsgEdit    Opcode = 67
+	OpChatSearch Opcode = 68
+	OpMsgGet     Opcode = 71
+	OpMsgSearch  Opcode = 73
 
 	// File Operations
 	OpPhotoUpload  Opcode = 80
@@ -171,4 +172,3 @@ const (
 	AccessTypePrivate AccessType = "PRIVATE"
 	AccessTypeSecret  AccessType = "SECRET"
 )
-

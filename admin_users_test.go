@@ -77,7 +77,7 @@ func TestEditedUserTakesEffectWithoutRestart(t *testing.T) {
 		t.Fatalf("edit = %d, want 200", got)
 	}
 
-	if got := getUserWebhookUrl(token); got != "https://hooks.example/new" {
+	if got := getUserWebhookUrl(&MyClient{userID: "edited-user", token: token, db: s.db}); got != "https://hooks.example/new" {
 		t.Fatalf("webhook events go to %q, want the edited webhook", got)
 	}
 	cached, found := userinfocache.Get(token)

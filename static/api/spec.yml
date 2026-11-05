@@ -1,36 +1,49 @@
 openapi: 3.1.0
 info:
   title: MaxAPI
-  version: 4.0.0
+  version: 5.0.0
   description: |-
     maxapi holds logins into MAX Messenger accounts and exposes them over REST:
-    sending text and media, reading history, contacts and groups, and webhook
-    events. The owner logs in by scanning a QR code in the MAX app. When MAX
-    answers a send with a limit or restriction error, the gateway pauses
-    sending from that MAX account until the owner resumes it.
+    the account's chats, sending text and photos (uploaded once, attached by
+    token) and files, deleting for everyone, history, contacts and groups, and
+    webhook events. The owner logs in by scanning a QR code in the MAX app.
+    The gateway guards the account with a pause of the whole MAX account when
+    MAX answers with a limit or restriction error, until the owner resumes it.
+    The pause stops what the account does in MAX (sends, deletes, edits,
+    reactions, uploads, phone lookups, group changes), not what it reads (the
+    chat list, chat info, history, mark read, downloads, contacts, user
+    info). The gateway does not pace sends: how fast an account sends is the
+    job of the project that uses it.
 
-    This schema describes maxapi 1.5.1. `API.md` in the repository is the full
-    contract; where the two disagree, the code is right.
+    This schema describes maxapi 2.0.0. `API.md` in the repository is the full
+    contract, with what changed in 2.0.0 and how to move to it; where the two
+    disagree, the code is right. The codes, pause and chat list follow the
+    contract shared with the VK gateway (vkapi).
 
     ## Authentication
     - **Admin endpoints** (`/admin/*`): header `Authorization` with the raw admin
       token (`MAXAPI_ADMIN_TOKEN` or `-admintoken`), without `Bearer`.
-    - **Account endpoints** (`/session/*`, `/chat/*`, `/user/*`, `/group/*`,
-      `/webhook`): header `token` with the account token returned by
+    - **Account endpoints** (`/session/*`, `/chat/*`, `/media/*`, `/user/*`,
+      `/group/*`, `/webhook`): header `token` with the account token returned by
       `POST /admin/users`. A `?token=` query parameter is accepted too when the
       header is absent.
     - `/health` takes no authentication.
 
     A missing or unknown token answers `401` `{"success": false, "error": "unauthorized"}`
     without `code`; on an account call it means the account was deleted
-    (`DELETE /admin/users/{userid}`, `POST /session/logout` or `LoggedOut`).
+    (`DELETE /admin/users/{userid}`).
 
     ## Errors
-    Every error body is `ErrorResponse` (`success` false, `error`). Only
-    `POST /chat/send/text`, `POST /session/resume` and
-    `GET /admin/users/{userid}` add a machine `code`; elsewhere tell errors apart
-    by the HTTP status and never by `error`. A required body that is missing or
-    not JSON answers `400`.
+    Every error body is `ErrorResponse` (`success` false, `error`, and on every
+    account call that reaches MAX a machine `code`). Branch on `code` and the
+    HTTP status, never on `error`. `upstreamCode` is MAX's own error code,
+    present whenever MAX answered with an error. While the MAX account is
+    paused, a send or a delete answers `422` `send_rejected` and every other
+    call that acts in MAX (edit, react, photo upload, phone lookup, group
+    changes) `409` `page_paused`, both with `paused` and `pauseReason` and
+    without `upstreamCode`: no MAX call was made. A call that only reads (the
+    chat list, chat info, history, mark read, downloads, contacts, user info,
+    presence, invite link) goes on while paused.
 
     ## Webhooks
     Events go to the account's webhook (see `webhooks` below) as JSON when the
@@ -56,7 +69,9 @@ tags:
 - name: session
   description: QR login, connection, status and pause of an account
 - name: chat
-  description: Sending, editing and deleting messages, history, media downloads
+  description: The account's chats, sending, editing and deleting messages, history, media downloads
+- name: media
+  description: Uploading a photo once for any chat of the account
 - name: user
   description: MAX users and contacts
 - name: group
@@ -363,10 +378,10 @@ paths:
       operationId: logout
       summary: Log out of MAX and delete the account
       description: |-
-        Logs the session out in MAX (when it is up), stops the reconnects and
-        deletes the gateway account with its MAX login and phone lookup cache;
-        the token answers 401 from now on. No webhook is sent for it. A pause of
-        its MAX account stays. No body is read.
+        Ends the MAX session (opcode 20) and erases the stored MAX login. The
+        gateway account stays, with its token, webhook and settings: a new
+        login is a QR login through `POST /session/connect`. Deleting the
+        account is `DELETE /admin/users/{userid}`. No webhook is sent.
       tags:
       - session
       security:
@@ -387,9 +402,10 @@ paths:
       operationId: getStatus
       summary: Get the account's MAX session
       description: |-
-        Reports the session, the stored login and the pause of the MAX account.
-        No MAX call. Read `paused` before `connected`: a paused account keeps
-        its session.
+        Reports the session, the stored login, the MAX account's name and photo
+        (the live session's, else the last login's) and the pause of the MAX
+        account. No MAX call. Read `paused` before `connected`: a paused account
+        keeps its session.
       tags:
       - session
       security:
@@ -414,7 +430,8 @@ paths:
         live session's, or the one stored at the last login), for every gateway
         account logged into it; `maxUserID` names the MAX account. An account
         that is not paused, or whose MAX account is unknown, answers the same.
-        The body is optional. No MAX call.
+        Every gateway account of the MAX account subscribed to `Resumed` (or
+        `All`) gets that event. The body is optional. No MAX call.
       tags:
       - session
       security:
@@ -442,40 +459,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         "500":
           description: '`INTERNAL_ERROR`: database error; the account stays paused. Also a database error while reading the account (no `code`).'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /session/sync:
-    post:
-      operationId: sync
-      summary: Log in again and return MAX's login data
-      description: |-
-        Closes the session and logs in again with the stored MAX login, then
-        answers with MAX's login data (profile, chats, contacts, ...) and sends
-        a `Sync` event with `manual` true. A failed login stops the session: it
-        is not retried. No body is read.
-      tags:
-      - session
-      security:
-      - ApiKeyAuth: []
-      responses:
-        "200":
-          description: Logged in again
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SyncResponse'
-        "400":
-          description: No MAX login is stored (no `code`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "500":
-          description: The login failed ("sync failed", no `code`), or a database error while reading the account
           content:
             application/json:
               schema:
@@ -596,21 +579,30 @@ paths:
   /chat/send/text:
     post:
       operationId: sendText
-      summary: Send a text message
+      summary: Send a message
       description: |-
-        Sends a text from the account to a chat, or to a person by phone. Every
-        error carries a delivery outcome `code`: only `send_failed` (500) means
-        the message may have arrived; every other error means nothing was sent.
-        The checks run in this order: session, body, target, pause, lookup
-        (cache, then MAX), send. Answers within ~9.5 s (lookup at most 4 s, the
-        send's acknowledgement at most 5 s).
+        Sends a text, with up to 12 photos uploaded by `POST /media/photo`, to a
+        chat (a dialog, a group chat, a channel the account may post in) or to a
+        person by phone. Every error carries a delivery outcome `code`: only
+        `send_failed` (500) means the message may have arrived; every other
+        error means nothing was sent. The checks run in this order: session,
+        body, target, message, pause, lookup (cache, then MAX), send.
+        Answers within ~9.5 s: the phone lookup waits at most 4 s for MAX, the
+        send at most 5 s, each database call at most 200 ms.
 
-        A phone lookup's answer is cached per account: a found contact for 90
-        days, MAX's `not.found` for 30 days. A MAX error on the lookup or the
-        send whose code contains `restricted`, `limit`, `too.many`, `flood` or
-        `spam` pauses the MAX account (`paused`, `pauseReason`); while paused
-        every send of every gateway account of it answers 422 `send_rejected`
-        without a MAX call, until `POST /session/resume`.
+        The gateway does not pace sends: each send goes to MAX at once, and
+        sends of one account may run at the same time. How fast an account
+        sends is the job of the project that uses the gateway.
+
+        A MAX error on the lookup or the send whose code marks a limit or
+        restriction (`restricted`, `too.many`, `flood`, `spam`, or `limit` other
+        than a size or length limit) pauses the MAX account (`paused`,
+        `pauseReason`) and sends `Paused`; while paused every send of every
+        gateway account of it answers 422 `send_rejected` without a MAX call,
+        until `POST /session/resume`.
+
+        With a `ref`, a send answered `send_failed` is confirmed later by the
+        `MessageOutcome` event.
       tags:
       - chat
       security:
@@ -629,29 +621,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/SendTextResponse'
         "400":
-          description: 'Not sent. `invalid_target`: neither `chatId` nor `phone` given. `INVALID_INPUT`: the body is missing or not JSON.'
+          description: 'Not sent. `invalid_target`: neither `chatId` nor `phone`. `INVALID_INPUT`: the body is not JSON, an attachment is empty, or `ref` is over 128 bytes.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: '`address_refused`: not sent. The chat does not let the account write (MAX''s `chat.denied`, `channel.denied`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: |-
             `address_not_found`: not sent. `phone` is malformed, MAX has no user
-            with it (`upstreamCode` "not.found" when MAX said so), or the lookup
-            cache holds MAX's `not.found` younger than 30 days (no MAX call, no
-            `upstreamCode`).
+            with it, the lookup cache holds MAX's `not.found` younger than 30
+            days, or MAX knows no such chat.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "422":
           description: |-
-            `send_rejected`: not sent. MAX refused the send (`upstreamCode`; a
-            limit or restriction code also pauses the account: `paused`,
-            `pauseReason`), or the account is paused (`paused`, `pauseReason`,
-            no `upstreamCode`, no MAX call).
+            Not sent. `message_rejected`: the message itself is refused, without
+            a MAX call (no text and no attachment, a text over 4000 UTF-16 units,
+            over 12 attachments) or by MAX (`upstreamCode`); it will not go to
+            this chat as it is. `attachment_rejected`: MAX refused an attachment
+            (expired, wrong or deleted); upload the photo again.
+            `send_rejected`: the account is paused (`paused`, no
+            `upstreamCode`), MAX answered a stop signal (now paused, with
+            `upstreamCode`), or MAX refused otherwise (`upstreamCode`).
           content:
             application/json:
               schema:
@@ -660,8 +661,8 @@ paths:
           description: |-
             `send_failed`: the outcome is unknown, MAX may have delivered the
             message (no answer in time, or the session was lost after the send
-            went out); never resend it automatically. Also a database error while
-            reading the account (no `code`).
+            went out); never resend it automatically. With a `ref`,
+            `MessageOutcome` tells later whether it arrived.
           content:
             application/json:
               schema:
@@ -670,53 +671,26 @@ paths:
           description: |-
             Not sent. `not_connected`: no live MAX session. `lookup_failed`: the
             phone lookup timed out, lost its connection or MAX answered it with
-            an error other than `not.found` (`upstreamCode`; a limit or
-            restriction code also pauses the account: `paused`, `pauseReason`).
+            an error other than `not.found` (`upstreamCode`; a stop signal also
+            pauses the account).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /chat/send/image:
-    post:
-      operationId: sendImage
-      summary: Send an image
-      description: |-
-        Uploads an image to MAX and sends it with an optional caption. Errors
-        carry no `code`; a 500 leaves the outcome unknown. The pause and the
-        lookup cache of `POST /chat/send/text` do not apply here.
-      tags:
-      - chat
-      security:
-      - ApiKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SendImageBody'
-      responses:
-        "200":
-          description: MAX accepted the message
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendMediaResponse'
-        "400":
-          $ref: '#/components/responses/MediaBadRequest'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "500":
-          $ref: '#/components/responses/MediaSendFailed'
-        "503":
-          $ref: '#/components/responses/NotConnected'
   /chat/send/audio:
     post:
       operationId: sendAudio
       summary: Send an audio file
       description: |-
-        Uploads an audio file to MAX and sends it as a file. Errors carry no
-        `code`; a 500 leaves the outcome unknown. The pause and the lookup cache
-        of `POST /chat/send/text` do not apply here.
+        Sends an audio file, sent as a file: the media is fetched or decoded (a URL goes through the
+        SSRF guard, at most `MAXAPI_MEDIA_MAX_BYTES`), uploaded to MAX, then
+        sent with the rules and codes of `POST /chat/send/text`: the pause, the
+        phone lookup through the cache, `ref`. The checks run in this order:
+        session, body, target, caption, pause, media, upload, lookup, send.
+        MAX refusing the upload, or the upload failing, answers 422
+        `attachment_rejected`. The upload takes up to ~90 s for a document
+        or audio and ~270 s for a video (the upload address, the upload, MAX's
+        processing) on top of the send's ~9.5 s.
       tags:
       - chat
       security:
@@ -733,23 +707,59 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SendMediaResponse'
+                $ref: '#/components/schemas/SendTextResponse'
         "400":
-          $ref: '#/components/responses/MediaBadRequest'
+          description: 'Not sent. `invalid_target`, or `INVALID_INPUT`: the body is not JSON, the media is neither a URL, a data URL nor base64, or it is over the limit.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: '`address_refused`: not sent, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: '`address_not_found`: not sent, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: 'Not sent: `fetch_failed` (the URL could not be fetched), `attachment_rejected`, `message_rejected` or `send_rejected`, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
-          $ref: '#/components/responses/MediaSendFailed'
+          description: '`send_failed`: the outcome is unknown, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
-          $ref: '#/components/responses/NotConnected'
+          description: '`not_connected` or `lookup_failed`, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /chat/send/document:
     post:
       operationId: sendDocument
       summary: Send a document
       description: |-
-        Uploads a file to MAX and sends it with an optional caption. Errors
-        carry no `code`; a 500 leaves the outcome unknown. The pause and the
-        lookup cache of `POST /chat/send/text` do not apply here.
+        Sends a document: the media is fetched or decoded (a URL goes through the
+        SSRF guard, at most `MAXAPI_MEDIA_MAX_BYTES`), uploaded to MAX, then
+        sent with the rules and codes of `POST /chat/send/text`: the pause, the
+        phone lookup through the cache, `ref`. The checks run in this order:
+        session, body, target, caption, pause, media, upload, lookup, send.
+        MAX refusing the upload, or the upload failing, answers 422
+        `attachment_rejected`. The upload takes up to ~90 s for a document
+        or audio and ~270 s for a video (the upload address, the upload, MAX's
+        processing) on top of the send's ~9.5 s.
       tags:
       - chat
       security:
@@ -766,23 +776,59 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SendMediaResponse'
+                $ref: '#/components/schemas/SendTextResponse'
         "400":
-          $ref: '#/components/responses/MediaBadRequest'
+          description: 'Not sent. `invalid_target`, or `INVALID_INPUT`: the body is not JSON, the media is neither a URL, a data URL nor base64, or it is over the limit.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: '`address_refused`: not sent, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: '`address_not_found`: not sent, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: 'Not sent: `fetch_failed` (the URL could not be fetched), `attachment_rejected`, `message_rejected` or `send_rejected`, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
-          $ref: '#/components/responses/MediaSendFailed'
+          description: '`send_failed`: the outcome is unknown, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
-          $ref: '#/components/responses/NotConnected'
+          description: '`not_connected` or `lookup_failed`, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /chat/send/video:
     post:
       operationId: sendVideo
       summary: Send a video
       description: |-
-        Uploads a video to MAX and sends it with an optional caption. Errors
-        carry no `code`; a 500 leaves the outcome unknown. The pause and the
-        lookup cache of `POST /chat/send/text` do not apply here.
+        Sends a video: the media is fetched or decoded (a URL goes through the
+        SSRF guard, at most `MAXAPI_MEDIA_MAX_BYTES`), uploaded to MAX, then
+        sent with the rules and codes of `POST /chat/send/text`: the pause, the
+        phone lookup through the cache, `ref`. The checks run in this order:
+        session, body, target, caption, pause, media, upload, lookup, send.
+        MAX refusing the upload, or the upload failing, answers 422
+        `attachment_rejected`. The upload takes up to ~90 s for a document
+        or audio and ~270 s for a video (the upload address, the upload, MAX's
+        processing) on top of the send's ~9.5 s.
       tags:
       - chat
       security:
@@ -799,20 +845,50 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SendMediaResponse'
+                $ref: '#/components/schemas/SendTextResponse'
         "400":
-          $ref: '#/components/responses/MediaBadRequest'
+          description: 'Not sent. `invalid_target`, or `INVALID_INPUT`: the body is not JSON, the media is neither a URL, a data URL nor base64, or it is over the limit.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: '`address_refused`: not sent, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: '`address_not_found`: not sent, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: 'Not sent: `fetch_failed` (the URL could not be fetched), `attachment_rejected`, `message_rejected` or `send_rejected`, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
-          $ref: '#/components/responses/MediaSendFailed'
+          description: '`send_failed`: the outcome is unknown, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
-          $ref: '#/components/responses/NotConnected'
+          description: '`not_connected` or `lookup_failed`, as for `POST /chat/send/text`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /chat/send/edit:
     post:
       operationId: editMessage
       summary: Edit a message
-      description: Replaces the text of a message the account sent.
+      description: Replaces the text of a message the account sent. MAX allows it for 7 days (`edit-timeout`).
       tags:
       - chat
       security:
@@ -838,15 +914,32 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
+        "422":
+          description: '`message_rejected`: the text is over 4000 UTF-16 units; no MAX call'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /chat/delete:
     post:
       operationId: deleteMessages
-      summary: Delete messages
-      description: Deletes messages of a chat, for everyone or (`forMe`) only for the account.
+      summary: Delete messages for everyone
+      description: |-
+        Deletes up to 100 messages of one chat for everyone, in one MAX call,
+        and answers per message. MAX answers with the ids it deleted: those are
+        `deleted`, the rest `not_found`. When MAX refuses the whole call with a
+        code of a message (not found, too old, no right), every id gets that
+        status with `upstreamCode`. The pause applies as to a send (422
+        `send_rejected`), and a stop signal pauses the account. Answers within
+        ~5.5 s.
       tags:
       - chat
       security:
@@ -859,17 +952,31 @@ paths:
               $ref: '#/components/schemas/DeleteMessagesBody'
       responses:
         "200":
-          description: Deleted (`message` "Messages deleted")
+          description: MAX answered; the outcome of each message is in `results`
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/DeleteMessagesResponse'
         "400":
-          $ref: '#/components/responses/BadBody'
+          description: '`invalid_target`: `chatId` is 0. `INVALID_INPUT`: the body is not JSON, or `messageIds` is empty, over 100, or has an id that is not a positive integer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "422":
+          description: '`send_rejected`: nothing was deleted. The account is paused (`paused`, no `upstreamCode`), MAX answered a stop signal (now paused, with `upstreamCode`), or MAX refused otherwise (`upstreamCode`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          description: '`send_failed`: MAX did not answer in time; the messages may be deleted.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           $ref: '#/components/responses/NotConnected'
   /chat/react:
@@ -898,8 +1005,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /chat/markread:
@@ -932,8 +1043,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /chat/history:
@@ -962,8 +1077,208 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/list:
+    get:
+      operationId: listChats
+      summary: List the account's chats
+      description: |-
+        A page of the account's chats, the newest first, as the MAX web client
+        pages them (CHATS_LIST, opcode 53). Each row carries the `chatId` a
+        send takes and whether the account may write there. No message's text
+        is in the answer unless `include=lastMessage` asks for it. The
+        account's own Favorites (chat 0) is not listed.
+
+        Pages follow MAX's cursor: pass `nextMarker` as `marker` to get the next
+        page; without `nextMarker` this is the last one. MAX sets the page size
+        (50 at the time of writing). `type` keeps the rows of the given kinds of
+        each page, and `q` the rows whose title (a dialog's: the person's name)
+        holds it, in any letter case, so a page may hold fewer rows, even none,
+        while `nextMarker` is still there: page on while it is present. MAX's
+        own search (opcode 68) is not used: live it found none of the
+        account's chats by title. One MAX call for the page, one for the people
+        behind its dialogs (their names and photos): answers within ~7 s.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      parameters:
+      - name: marker
+        in: query
+        description: '`nextMarker` of the previous page; absent for the first page'
+        schema:
+          type: string
+      - name: type
+        in: query
+        description: 'Keep only rows of these kinds: `user`, `chat`, `channel`, comma-separated or repeated'
+        style: form
+        explode: true
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatKind'
+      - name: q
+        in: query
+        description: Part of the title, at most 200 characters; keeps the rows of each page whose title holds it, in any letter case
+        schema:
+          type: string
+          maxLength: 200
+      - name: include
+        in: query
+        description: '`lastMessage` adds the last message with its text, `participants` the members'' ids; comma-separated or repeated'
+        style: form
+        explode: true
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatInclude'
+      responses:
+        "200":
+          description: A page of chats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatListResponse'
+        "400":
+          description: '`INVALID_INPUT`: an unknown `type` or `include`, a `marker` that is no `nextMarker`, or `q` over 200 characters'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /chat/info:
+    get:
+      operationId: chatInfo
+      summary: Get chats by id
+      description: |-
+        The rows of up to 100 chats by id (CHAT_INFO, opcode 48), in the order
+        asked, as `GET /chat/list` gives them; the chats MAX does not show the
+        account are listed in `missing`. Answers within ~5.5 s.
+      tags:
+      - chat
+      security:
+      - ApiKeyAuth: []
+      parameters:
+      - name: chatId
+        in: query
+        required: true
+        description: Chat ids, comma-separated or repeated, 1 to 100
+        style: form
+        explode: true
+        schema:
+          type: array
+          items:
+            type: integer
+            format: int64
+      - name: include
+        in: query
+        description: As for `GET /chat/list`
+        style: form
+        explode: true
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatInclude'
+      responses:
+        "200":
+          description: The chats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatInfoResponse'
+        "400":
+          description: '`INVALID_INPUT`: no `chatId`, over 100, a `chatId` that is not a non-zero integer, or an unknown `include`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
+        "503":
+          $ref: '#/components/responses/NotConnected'
+  /media/photo:
+    post:
+      operationId: uploadPhoto
+      summary: Upload a photo once
+      description: |-
+        Uploads a photo to MAX for the account and answers with its
+        `attachment`, which `POST /chat/send/text` takes in `attachments` for
+        any chat of the account. The photo comes as JSON `{url}` or `{data}`
+        (base64 or a data URL), or as a multipart form with a `file` field. The
+        body, and the photo, are at most `MAXAPI_PHOTO_MAX_BYTES` (10 MiB by
+        default). A URL is fetched by the gateway through its SSRF guard (http
+        and https only, no internal address, 8 s, a 2xx answer). The photo must
+        be a JPEG, PNG, GIF or WebP image; `width` and `height` are read from
+        it. Then PHOTO_UPLOAD (opcode 80) and the HTTP upload to MAX. How long
+        MAX keeps an attachment is in API.md. Answers within ~27 s: the fetch at
+        most 8 s, opcode 80 at most 4 s, the upload at most 15 s.
+      tags:
+      - media
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoBody'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: The photo is uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoResponse'
+        "400":
+          description: '`invalid_image`: the data is no JPEG, PNG, GIF or WebP image, or not base64. `INVALID_INPUT`: neither `url`, `data` nor a file, or both `url` and `data`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
+        "413":
+          description: '`INVALID_INPUT`: the body is over `MAXAPI_PHOTO_MAX_BYTES`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          $ref: '#/components/responses/FetchFailed'
+        "502":
+          description: '`upload_failed`: MAX did not take the photo (it refused opcode 80 with `upstreamCode`, gave no upload address, or the upload failed); try again'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           $ref: '#/components/responses/NotConnected'
   /chat/downloadimage:
@@ -971,8 +1286,10 @@ paths:
       operationId: downloadImage
       summary: Download a file by URL
       description: |-
-        The gateway fetches `url` itself (30 s timeout, any host) and returns
-        the bytes in base64. Needs no MAX session.
+        The gateway fetches `url` itself through its SSRF guard (http and https
+        only, no internal address, at most `MAXAPI_MEDIA_MAX_BYTES`, 60 s) and
+        returns the bytes in base64. Meant for the `baseUrl` of a photo of a
+        `Message`. Makes no MAX call and needs no MAX session.
       tags:
       - chat
       security:
@@ -998,6 +1315,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "422":
+          $ref: '#/components/responses/FetchFailed'
         "500":
           description: The download failed (no `code`), or a database error while reading the account
           content:
@@ -1034,6 +1353,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "422":
+          $ref: '#/components/responses/FetchFailed'
         "500":
           description: The download failed (no `code`), or a database error while reading the account
           content:
@@ -1066,12 +1387,14 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
+        "422":
+          $ref: '#/components/responses/FetchFailed'
         "500":
-          description: MAX gave no download URL, or the download failed (no `code`); or a database error while reading the account
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /chat/downloadvideo:
@@ -1100,12 +1423,14 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
+        "422":
+          $ref: '#/components/responses/FetchFailed'
         "500":
-          description: MAX gave no download URL, or the download failed (no `code`); or a database error while reading the account
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /user/contacts:
@@ -1126,8 +1451,12 @@ paths:
                 $ref: '#/components/schemas/ContactsResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /user/check:
@@ -1135,9 +1464,14 @@ paths:
       operationId: checkUsers
       summary: Look phone numbers up in MAX
       description: |-
-        Looks each number up in MAX, one by one, without the lookup cache of
-        `POST /chat/send/text` and without the pause. A number whose lookup
-        failed gets `exists` false plus `error`.
+        Tells for each number, at most 50, whether MAX has a user with it,
+        through the lookup cache of the sends: a number found within 90 days,
+        or refused with MAX's `not.found` within 30, makes no MAX call, and a
+        number looked up here is cached for the send that follows. The rest is
+        looked up in MAX one by one, each within 4 s. A number whose lookup
+        failed gets `exists` false plus `error` (and `upstreamCode` when MAX
+        answered). A stop signal on a lookup pauses the account and ends the
+        call with 409 `page_paused`; while paused no lookup is made.
       tags:
       - user
       security:
@@ -1159,6 +1493,8 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
           $ref: '#/components/responses/AccountLookupError'
         "503":
@@ -1167,7 +1503,11 @@ paths:
     post:
       operationId: getUserInfo
       summary: Get MAX users by id
-      description: MAX users by their ids, from the session's cache or from MAX.
+      description: |-
+        MAX users by their ids (1 to 100), from the session's memory or from MAX
+        (CONTACT_INFO, opcode 32): names, photo, and `phone` when MAX shows it
+        to the account. This replaces the `contacts` that `Sync` carried before
+        2.0.0. Answers within 8 s.
       tags:
       - user
       security:
@@ -1193,8 +1533,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /user/presence:
@@ -1223,8 +1567,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /group/create:
@@ -1253,40 +1601,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
-        "500":
-          $ref: '#/components/responses/MAXCallFailed'
-        "503":
-          $ref: '#/components/responses/NotConnected'
-  /group/info:
-    post:
-      operationId: getGroupInfo
-      summary: Get a chat
-      description: A chat as MAX gives it.
-      tags:
-      - group
-      security:
-      - ApiKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChatIdBody'
-      responses:
-        "200":
-          description: The chat
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GroupResponse'
-        "400":
-          $ref: '#/components/responses/BadBody'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "404":
-          $ref: '#/components/responses/ChatNotFound'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
           $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /group/invitelink:
@@ -1316,9 +1636,17 @@ paths:
         "401":
           $ref: '#/components/responses/Unauthorized'
         "404":
-          $ref: '#/components/responses/ChatNotFound'
+          description: '`address_not_found`: MAX does not show the account this chat'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          $ref: '#/components/responses/PausedByCall'
         "500":
           $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /group/join:
@@ -1347,8 +1675,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /group/leave:
@@ -1377,8 +1709,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /group/name:
@@ -1407,8 +1743,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /group/topic:
@@ -1437,8 +1777,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
   /group/updateparticipants:
@@ -1467,8 +1811,12 @@ paths:
           $ref: '#/components/responses/BadBody'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "409":
+          $ref: '#/components/responses/PagePaused'
         "500":
-          $ref: '#/components/responses/MAXCallFailed'
+          $ref: '#/components/responses/AccountLookupError'
+        "502":
+          $ref: '#/components/responses/UpstreamError'
         "503":
           $ref: '#/components/responses/NotConnected'
 webhooks:
@@ -1526,54 +1874,231 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     NotConnected:
-      description: '"not connected": no live MAX session (no `code`)'
+      description: '`not_connected`: no live MAX session, or MAX did not answer the call'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PagePaused:
+      description: |-
+        `page_paused`: the MAX account is paused. Before the call: this call
+        acts in MAX, so no MAX call was made; `paused` and `pauseReason`, no
+        `upstreamCode`. By the call: MAX answered a stop signal, the account is
+        paused now, with `upstreamCode`. `POST /session/resume` lifts it.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PausedByCall:
+      description: |-
+        `page_paused`: MAX answered this call with a stop signal; the account
+        is paused now (`paused`, `pauseReason`, `upstreamCode`). A pause set
+        before does not hold this call: it only reads. `POST /session/resume`
+        lifts the pause.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UpstreamError:
+      description: '`upstream_error`: MAX refused the call (`upstreamCode`), or its answer was unreadable'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    FetchFailed:
+      description: |-
+        `fetch_failed`: the gateway could not fetch the URL: not http(s), its
+        host resolves to an internal address, no answer within the time, a
+        non-2xx answer, or more than the limit. No MAX call was made.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     BadBody:
-      description: The body is missing or not JSON (no `code`)
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    MAXCallFailed:
-      description: MAX refused the call or did not answer it in time (no `code`), or a database error while reading the account
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    ChatNotFound:
-      description: MAX did not give the chat ("chat not found", no `code`), also when MAX did not answer
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    MediaBadRequest:
-      description: |-
-        Not sent (no `code`): the body is missing or not JSON, the `phone`
-        lookup failed for any reason ("user not found"), or the media could not
-        be decoded or downloaded.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    MediaSendFailed:
-      description: |-
-        "send failed" (no `code`): the upload or the send failed; the outcome is
-        unknown. Also a database error while reading the account.
+      description: '`INVALID_INPUT`: the body is missing or not JSON'
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    MessageID:
+      type: string
+      description: A MAX message id. MAX's ids are above 2^53, so they travel as strings; a JSON number is read too.
+      example: "115478893120847321"
+    Ref:
+      type: string
+      maxLength: 128
+      description: |-
+        The caller's own id of the message, at most 128 bytes. The message's
+        cid is made from it, the same for every send with this ref, and a
+        `send_failed` with it is confirmed by `MessageOutcome`.
+      example: post-42-chat-7
+    ChatKind:
+      type: string
+      enum: [user, chat, channel]
+      description: '`user` a dialog with a person or a bot, `chat` a group chat, `channel` a channel'
+    ChatInclude:
+      type: string
+      enum: [lastMessage, participants]
+    ChatRow:
+      type: object
+      description: One chat of the account, as `GET /chat/list` and `GET /chat/info` give it.
+      required: [chatId, type, title, canWrite, unreadCount]
+      properties:
+        chatId:
+          type: integer
+          format: int64
+          description: The chat; `POST /chat/send/text` takes it as it is
+          example: -70000000000000
+        type:
+          $ref: '#/components/schemas/ChatKind'
+        userId:
+          type: integer
+          format: int64
+          description: The person (or bot) of a dialog
+          example: 123456789
+        title:
+          type: string
+          description: The chat's title, or the person's name; "" when unknown
+          example: Покупатели
+        membersCount:
+          type: integer
+          description: Members of a group chat or channel
+          example: 17
+        photo:
+          type: string
+          description: The chat's or the person's photo URL, when there is one
+        canWrite:
+          type: boolean
+          description: Whether the account may write there, by the rules of the MAX web client
+        cantWriteReason:
+          type: string
+          description: |-
+            Why not, when `canWrite` is false: `restricted` (MAX does not let the
+            account write there: a service chat, a restricted chat),
+            `not_member`, `chat_closed` (removed, blocked, left or closed),
+            `not_admin` (a channel the account may not post in),
+            `user_blocked` or `user_removed` (the person's MAX account).
+          example: not_admin
+        unreadCount:
+          type: integer
+          description: Unread messages, as MAX counts them
+        lastMessageId:
+          type: string
+          description: The last message's id
+        lastMessageDate:
+          type: integer
+          format: int64
+          description: The last message's unix time, seconds
+        lastMessage:
+          type: object
+          description: With `include=lastMessage` only. The last message as MAX gives it, its text included.
+          additionalProperties: true
+        participants:
+          type: array
+          description: With `include=participants` only. The members' MAX ids, as MAX lists them.
+          items:
+            type: integer
+            format: int64
+    ChatListResponse:
+      type: object
+      required: [success, items]
+      properties:
+        success:
+          type: boolean
+          example: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatRow'
+        nextMarker:
+          type: string
+          description: Present when another page follows; pass it as `marker`
+          example: "1776820000000"
+    ChatInfoResponse:
+      type: object
+      required: [success, items, missing]
+      properties:
+        success:
+          type: boolean
+          example: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatRow'
+        missing:
+          type: array
+          description: The ids asked for that MAX does not show the account
+          items:
+            type: integer
+            format: int64
+    PhotoBody:
+      type: object
+      description: One of `url` and `data`.
+      properties:
+        url:
+          type: string
+          description: An http(s) address of the photo; the gateway fetches it
+          example: https://cdn.example.com/p/1.jpg
+        data:
+          type: string
+          description: The photo as base64 or a data URL
+    PhotoResponse:
+      type: object
+      required: [success, attachment, width, height]
+      properties:
+        success:
+          type: boolean
+          example: true
+        attachment:
+          type: string
+          description: MAX's token of the photo; `attachments` of `POST /chat/send/text` takes it, for any chat of the account
+        width:
+          type: integer
+          example: 1080
+        height:
+          type: integer
+          example: 1440
+    DeleteResult:
+      type: object
+      required: [messageId, status]
+      properties:
+        messageId:
+          $ref: '#/components/schemas/MessageID'
+        status:
+          type: string
+          enum: [deleted, too_old, not_found, forbidden]
+          description: |-
+            `deleted`: MAX deleted it for everyone. `not_found`: MAX did not
+            delete it (no such message in the chat, as far as MAX says).
+            `too_old`, `forbidden`: MAX refused the call with a code of that
+            kind (`upstreamCode`).
+        upstreamCode:
+          type: string
+          description: MAX's code, when MAX refused the call
+    DeleteMessagesResponse:
+      type: object
+      required: [success, chatId, results]
+      properties:
+        success:
+          type: boolean
+          example: true
+        chatId:
+          type: integer
+          format: int64
+        results:
+          type: array
+          description: One per id asked, in order, without repeats
+          items:
+            $ref: '#/components/schemas/DeleteResult'
     ErrorResponse:
       type: object
       description: |-
-        The error body of every call. Most errors carry no `code`: only
-        `POST /chat/send/text`, `POST /session/resume` and
-        `GET /admin/users/{userid}` send one. Only `POST /chat/send/text` adds
-        `upstreamCode` and the account's pause.
+        The error body of every call. On every account call that reaches MAX it
+        carries a machine `code`; the codes are listed in API.md, "Codes", each
+        with its HTTP status. `upstreamCode` is MAX's own code, present whenever
+        MAX answered with an error. A failure because of the account's pause
+        carries `paused` and `pauseReason`.
       required:
       - success
       - error
@@ -1583,43 +2108,47 @@ components:
           example: false
         error:
           type: string
-          description: A human-readable text, often with MAX's error inside; it may change. Do not branch on it.
-          example: 'send rejected: Refused: Refused (chat.denied)'
+          description: A human-readable text; it may change. Do not branch on it.
+          example: MAX refused the message
         code:
           type: string
           description: |-
-            The machine code, when the answer has one. `POST /chat/send/text`:
-            the delivery outcome codes `not_connected`, `invalid_target`,
-            `address_not_found`, `lookup_failed`, `send_rejected`, `send_failed`
-            (`address_refused` is reserved and not sent yet), and
-            `INVALID_INPUT`. `POST /session/resume`: `INVALID_INPUT`,
-            `INTERNAL_ERROR`. `GET /admin/users/{userid}`: `NOT_FOUND`,
-            `INTERNAL_ERROR`. Treat an unknown code as a failure of the call.
+            The machine code. Delivery (a send, a delete): `not_connected`,
+            `invalid_target`, `address_not_found`, `address_refused`,
+            `lookup_failed`, `send_rejected`, `message_rejected`,
+            `attachment_rejected`, `send_failed`. Other calls that reach MAX:
+            `page_paused`, `upstream_error`, `not_connected`. Media:
+            `invalid_image`, `fetch_failed`, `upload_failed`. Generic:
+            `INVALID_INPUT`, `INTERNAL_ERROR`, `NOT_FOUND`. Treat an unknown code
+            as a failure of the call.
           example: send_rejected
         upstreamCode:
           type: string
           description: |-
-            The error code MAX itself answered with (`chat.denied`, `not.found`,
-            `error.user.restricted.send`). Absent when MAX did not answer with an
-            error: a timeout, a lost session, or a refusal by the gateway itself.
+            MAX's own error code (`chat.denied`, `not.found`,
+            `error.user.restricted.send`), present whenever MAX answered with
+            an error. Absent when no MAX call was made (a pause that was
+            already set) or MAX did not answer.
           example: chat.denied
         paused:
           type: boolean
           description: |-
-            Present (true) only when sending from the MAX account is paused: by
-            this refusal, or before it. Stop sending from every connection of
-            this MAX account until `POST /session/resume`.
+            Present (true) only when the MAX account is paused: by this refusal,
+            or before it. Until `POST /session/resume`, every gateway account of
+            this MAX account is refused what acts in MAX (sends, deletes, edits,
+            reactions, uploads, phone lookups, group changes); reads go on.
         pauseReason:
           $ref: '#/components/schemas/PauseReason'
     PauseReason:
       type: string
-      description: Why sending from the MAX account is paused. maxapi gives only `spam` (a limit or restriction error of MAX).
+      description: Why the MAX account is paused. maxapi gives only `spam` (a limit or restriction error of MAX).
       example: spam
     EventType:
       type: string
       description: |-
         A webhook event type. `All` subscribes to every event. `Connected`,
-        `FileReady` and `HistorySync` are accepted but never sent.
+        `FileReady`, `HistorySync` and `LoggedOut` are accepted but never sent
+        (MAX ending the session is `AuthExpired` with `logged_out`).
       enum:
       - Message
       - MessageEdit
@@ -1636,6 +2165,9 @@ components:
       - QRAuthorized
       - QRExpired
       - AuthExpired
+      - Paused
+      - Resumed
+      - MessageOutcome
       - ChatUpdate
       - Typing
       - ReactionChange
@@ -1680,7 +2212,7 @@ components:
           example: ok
         version:
           type: string
-          example: 1.5.1
+          example: 2.0.0
         uptime_seconds:
           type: integer
           format: int64
@@ -2020,6 +2552,14 @@ components:
           type: string
           description: Only while paused; the MAX error code that paused the account
           example: error.user.restricted.send
+        name:
+          type: string
+          description: The MAX account's name, from the live session or else the last login; absent when unknown
+          example: Магазин у дома
+        photo:
+          type: string
+          description: The MAX account's photo URL, as `name`
+          example: https://i.oneme.ru/i?r=...
     ResumeBody:
       type: object
       description: Optional; no body and `{}` work too.
@@ -2042,21 +2582,6 @@ components:
           format: int64
           description: The MAX account whose pause was lifted; 0 when unknown
           example: 123456789
-    SyncResponse:
-      type: object
-      description: '`success`, `maxUserID` and every field of MAX''s login answer (`profile`, `chats`, `contacts`, ...), as MAX sends them.'
-      required:
-      - success
-      - maxUserID
-      properties:
-        success:
-          type: boolean
-          example: true
-        maxUserID:
-          type: integer
-          format: int64
-          example: 123456789
-      additionalProperties: true
     WebhookBody:
       type: object
       properties:
@@ -2078,28 +2603,40 @@ components:
           example: https://example.com/webhook
     SendTextBody:
       type: object
-      description: One of `chatId` and `phone` is required; with both, `chatId` wins. Unknown fields are ignored.
+      description: One of `chatId` and `phone` is required; with both, `chatId` wins. A message needs a text or an attachment. Unknown fields are ignored.
       properties:
         chatId:
           type: integer
           format: int64
-          description: The MAX chat id. 0 means none (chat 0 is the account's own Favorites and is never addressed here).
-          example: 123456789
+          description: |-
+            The chat, as `chatId` of `GET /chat/list`: a dialog (positive), a
+            group chat or channel (negative). 0 means none (chat 0 is the
+            account's own Favorites and is never addressed here).
+          example: -70000000000000
         phone:
           type: string
           description: The recipient's phone with country code; looked up in the cache, then in MAX. The cache key is the string exactly as sent.
           example: "79001234567"
         text:
           type: string
+          description: At most 4000 UTF-16 code units (an emoji is 2); may be empty when `attachments` has one.
           example: Заказ 123 готов к выдаче
+        attachments:
+          type: array
+          maxItems: 12
+          description: Photos, as `attachment` of `POST /media/photo`, in this order; 12 is MAX's own limit
+          items:
+            type: string
+          example:
+          - "AAAA...photo-token"
+        ref:
+          $ref: '#/components/schemas/Ref'
         replyTo:
-          type: integer
-          format: int64
-          description: Id of the message to reply to; 0 for none
-          example: 0
+          $ref: '#/components/schemas/MessageID'
         notify:
           type: boolean
-          description: Whether MAX notifies the recipient; default false
+          default: true
+          description: Whether MAX notifies the recipients; true when left out, as MAX's web client sends every message. MAX refuses a channel post with false.
           example: true
     SendTextResponse:
       type: object
@@ -2120,27 +2657,6 @@ components:
           format: int64
           description: The chat the message went to; for a send by `phone`, the dialog of the account and the recipient
           example: 123456789
-    SendImageBody:
-      type: object
-      properties:
-        chatId:
-          type: integer
-          format: int64
-          description: The MAX chat id; when 0, `phone` is looked up
-          example: 123456789
-        phone:
-          type: string
-          example: "79001234567"
-        image:
-          type: string
-          description: A data URL, an http(s) URL the gateway downloads, or plain base64
-          example: data:image/jpeg;base64,/9j/4AAQ...
-        caption:
-          type: string
-          example: Ваш заказ
-        notify:
-          type: boolean
-          example: true
     SendAudioBody:
       type: object
       properties:
@@ -2162,7 +2678,11 @@ components:
           example: audio.mp3
         notify:
           type: boolean
+          default: true
+          description: Whether MAX notifies the recipients; true when left out
           example: true
+        ref:
+          $ref: '#/components/schemas/Ref'
     SendDocumentBody:
       type: object
       properties:
@@ -2187,7 +2707,11 @@ components:
           example: Счёт
         notify:
           type: boolean
+          default: true
+          description: Whether MAX notifies the recipients; true when left out
           example: true
+        ref:
+          $ref: '#/components/schemas/Ref'
     SendVideoBody:
       type: object
       properties:
@@ -2212,20 +2736,11 @@ components:
           example: Обзор
         notify:
           type: boolean
+          default: true
+          description: Whether MAX notifies the recipients; true when left out
           example: true
-    SendMediaResponse:
-      type: object
-      required:
-      - success
-      - messageId
-      properties:
-        success:
-          type: boolean
-          example: true
-        messageId:
-          type: string
-          description: MAX's id of the new message, as a string
-          example: "115478893120847321"
+        ref:
+          $ref: '#/components/schemas/Ref'
     EditMessageBody:
       type: object
       required:
@@ -2237,30 +2752,27 @@ components:
           format: int64
           example: 123456789
         messageId:
-          type: integer
-          format: int64
-          example: 115478893120847321
+          $ref: '#/components/schemas/MessageID'
         text:
           type: string
           example: Исправленный текст
     DeleteMessagesBody:
       type: object
+      required:
+      - chatId
+      - messageIds
       properties:
         chatId:
           type: integer
           format: int64
-          example: 123456789
+          example: -70000000000000
         messageIds:
           type: array
+          minItems: 1
+          maxItems: 100
+          description: The messages to delete for everyone, as `messageId` of a send (a JSON number is read too)
           items:
-            type: integer
-            format: int64
-          example:
-          - 115478893120847321
-        forMe:
-          type: boolean
-          description: Delete only for the account
-          example: false
+            $ref: '#/components/schemas/MessageID'
     ReactBody:
       type: object
       properties:
@@ -2287,9 +2799,7 @@ components:
           format: int64
           example: 123456789
         messageId:
-          type: integer
-          format: int64
-          example: 115478893120847321
+          $ref: '#/components/schemas/MessageID'
     ChatHistoryBody:
       type: object
       properties:
@@ -2338,9 +2848,7 @@ components:
           format: int64
           example: 123456789
         messageId:
-          type: integer
-          format: int64
-          example: 115478893120847321
+          $ref: '#/components/schemas/MessageID'
         fileId:
           type: integer
           format: int64
@@ -2354,9 +2862,7 @@ components:
           format: int64
           example: 123456789
         messageId:
-          type: integer
-          format: int64
-          example: 115478893120847321
+          $ref: '#/components/schemas/MessageID'
         videoId:
           type: integer
           format: int64
@@ -2467,12 +2973,15 @@ components:
           example: 987654321
         name:
           type: string
-          description: The user's first name in MAX, when found
+          description: The user's name in MAX, when found and known
           example: Иван
         error:
           type: string
           description: Present when the lookup itself failed; `exists` false then does not mean that MAX has no such user
           example: 'Timeout Error: Request timed out'
+        upstreamCode:
+          type: string
+          description: MAX's code, when MAX answered the failed lookup with an error
     UserInfoBody:
       type: object
       required:
@@ -2581,7 +3090,10 @@ components:
           type: boolean
           example: true
         chat:
-          $ref: '#/components/schemas/MaxChat'
+          oneOf:
+          - $ref: '#/components/schemas/ChatRow'
+          - type: 'null'
+          description: The chat MAX gave back, as a row of `GET /chat/list`
     InviteLinkResponse:
       type: object
       required:
@@ -2700,95 +3212,15 @@ components:
         avatarUrl:
           type: string
           description: '`baseRawUrl`, else `baseUrl`; "" when neither'
-    MaxChat:
-      type: object
-      description: A chat, as MAX gives it
-      required:
-      - id
-      - type
-      properties:
-        id:
-          type: integer
-          format: int64
-          example: -68000000000001
-        cid:
-          type: integer
-          format: int64
-        type:
+        name:
           type: string
-          description: '`DIALOG`, `CHAT` or `CHANNEL`'
-          example: CHAT
-        title:
-          type: string
-          example: Покупатели
-        description:
-          type: string
-        owner:
+          description: The name MAX shows for the user
+          example: Иван Петров
+        phone:
           type: integer
           format: int64
-        access:
-          type: string
-        link:
-          type: string
-        participants:
-          type: object
-          description: MAX user id → MAX's value for the member
-          additionalProperties:
-            type: integer
-            format: int64
-        participantsCount:
-          type: integer
-        admins:
-          type: array
-          items:
-            type: integer
-            format: int64
-        adminParticipants:
-          type: object
-          additionalProperties: true
-        lastMessage:
-          $ref: '#/components/schemas/MaxMessage'
-        options:
-          $ref: '#/components/schemas/MaxChatOptions'
-        created:
-          type: integer
-          format: int64
-        modified:
-          type: integer
-          format: int64
-        joinTime:
-          type: integer
-          format: int64
-        messagesCount:
-          type: integer
-        status:
-          type: string
-        baseIconUrl:
-          type: string
-        baseRawIconUrl:
-          type: string
-        lastEventTime:
-          type: integer
-          format: int64
-        lastDelayedUpdateTime:
-          type: integer
-          format: int64
-        lastFireDelayedErrorTime:
-          type: integer
-          format: int64
-    MaxChatOptions:
-      type: object
-      properties:
-        ONLY_OWNER_CAN_CHANGE_ICON_TITLE:
-          type: boolean
-        ALL_CAN_PIN_MESSAGE:
-          type: boolean
-        ONLY_ADMIN_CAN_ADD_MEMBER:
-          type: boolean
-        ONLY_ADMIN_CAN_CALL:
-          type: boolean
-        MEMBERS_CAN_SEE_PRIVATE_LINK:
-          type: boolean
+          description: The user's phone, only when MAX shows it to the account
+          example: 79001234567
     MaxMessage:
       type: object
       description: A message, as MAX gives it
@@ -2949,7 +3381,9 @@ components:
       - $ref: '#/components/schemas/ReconnectingEvent'
       - $ref: '#/components/schemas/ReconnectExhaustedEvent'
       - $ref: '#/components/schemas/SyncEvent'
-      - $ref: '#/components/schemas/LoggedOutEvent'
+      - $ref: '#/components/schemas/PausedEvent'
+      - $ref: '#/components/schemas/ResumedEvent'
+      - $ref: '#/components/schemas/MessageOutcomeEvent'
       - $ref: '#/components/schemas/QRGeneratedEvent'
       - $ref: '#/components/schemas/QRScannedEvent'
       - $ref: '#/components/schemas/QRAuthorizedEvent'
@@ -2971,7 +3405,9 @@ components:
           Reconnecting: '#/components/schemas/ReconnectingEvent'
           ReconnectExhausted: '#/components/schemas/ReconnectExhaustedEvent'
           Sync: '#/components/schemas/SyncEvent'
-          LoggedOut: '#/components/schemas/LoggedOutEvent'
+          Paused: '#/components/schemas/PausedEvent'
+          Resumed: '#/components/schemas/ResumedEvent'
+          MessageOutcome: '#/components/schemas/MessageOutcomeEvent'
           QRGenerated: '#/components/schemas/QRGeneratedEvent'
           QRScanned: '#/components/schemas/QRScannedEvent'
           QRAuthorized: '#/components/schemas/QRAuthorizedEvent'
@@ -3266,9 +3702,9 @@ components:
       type: object
       description: |-
         The session is logged in: after a connect with a stored login, after
-        `QRAuthorized`, after a reconnect, or after `POST /session/sync`. It
-        also carries every field of MAX's login answer (`profile`, `chats`,
-        `contacts`, ...): the owner's chats.
+        `QRAuthorized`, after a reconnect. It carries the account, never MAX's
+        login answer: the chats are `GET /chat/list`, people `POST /user/info`,
+        the profile `GET /session/status`.
       required: [type, maxUserID, reconnect, userID, instanceID, instanceName, eventTimestamp]
       properties:
         type:
@@ -3279,9 +3715,13 @@ components:
         reconnect:
           type: boolean
           description: true after a reconnect
-        manual:
-          type: boolean
-          description: Present (true) only after `POST /session/sync`
+        name:
+          type: string
+          description: The MAX account's name
+          example: Магазин у дома
+        photo:
+          type: string
+          description: The MAX account's photo URL; "" when it has none
         userID:
           $ref: '#/components/schemas/EventUserID'
         instanceID:
@@ -3290,18 +3730,77 @@ components:
           $ref: '#/components/schemas/EventInstanceName'
         eventTimestamp:
           $ref: '#/components/schemas/EventTimestamp'
-      additionalProperties: true
-    LoggedOutEvent:
+    PausedEvent:
       type: object
       description: |-
-        MAX ended the session (opcode 20 pushed by MAX). The gateway account is
-        deleted with it; its token answers 401 from now on. Not sent for
-        `POST /session/logout` or `DELETE /admin/users/{userid}`.
-      required: [type, userID, instanceID, instanceName, eventTimestamp]
+        The MAX account was paused: MAX answered a call of one of its gateway
+        accounts with a limit or restriction error. Every gateway account of the
+        MAX account subscribed to `Paused` (or `All`) gets it, also one without a
+        session. Until `POST /session/resume` no call of any of them reaches MAX.
+      required: [type, maxUserID, pauseReason, upstreamCode, userID, instanceID, instanceName, eventTimestamp]
       properties:
         type:
           type: string
-          const: LoggedOut
+          const: Paused
+        maxUserID:
+          $ref: '#/components/schemas/EventMaxUserID'
+        pauseReason:
+          $ref: '#/components/schemas/PauseReason'
+        upstreamCode:
+          type: string
+          description: MAX's code that paused the account
+          example: error.user.restricted.send
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    ResumedEvent:
+      type: object
+      description: The pause of the MAX account was lifted by `POST /session/resume` of any of its gateway accounts; every one subscribed gets it.
+      required: [type, maxUserID, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: Resumed
+        maxUserID:
+          $ref: '#/components/schemas/EventMaxUserID'
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    MessageOutcomeEvent:
+      type: object
+      description: |-
+        The outcome of a send with a `ref` answered `send_failed`: a minute (or
+        3, or 10) after the send, the gateway found the message in the chat by
+        its cid, or did not. No text is carried.
+      required: [type, ref, chatId, delivered, maxUserID, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: MessageOutcome
+        ref:
+          $ref: '#/components/schemas/Ref'
+        chatId:
+          type: integer
+          format: int64
+          example: -70000000000000
+        delivered:
+          type: boolean
+        messageId:
+          type: string
+          description: MAX's id of the message, only when delivered
+          example: "115478893120847321"
+        maxUserID:
+          $ref: '#/components/schemas/EventMaxUserID'
         userID:
           $ref: '#/components/schemas/EventUserID'
         instanceID:
@@ -3401,10 +3900,12 @@ components:
     AuthExpiredEvent:
       type: object
       description: |-
-        The session stopped and will not reconnect by itself: MAX refused the
-        stored login with an auth error (the login is erased; a new QR login is
-        needed), or refused the login 3 times in a row (the login is kept;
-        `POST /session/connect` tries again).
+        The session stopped and will not reconnect by itself. `reason` says
+        whether the stored login is gone (`token_revoked`, `page_blocked`,
+        `logged_out`: a new QR login through `POST /session/connect` is needed)
+        or kept (`refresh_failed`: `POST /session/connect` tries it again). The
+        gateway account stays in every case. MAX's own text goes to the log
+        only.
       required: [type, reason, userID, instanceID, instanceName, eventTimestamp]
       properties:
         type:
@@ -3412,8 +3913,15 @@ components:
           const: AuthExpired
         reason:
           type: string
-          description: The error text of an auth error; for refusals MAX's error code, "login timed out" or "login connection lost"
-          example: login timed out
+          enum: [token_revoked, page_blocked, refresh_failed, logged_out]
+          description: |-
+            `token_revoked`: MAX refused the stored login (login.token and the
+            like, or the account is gone); the login is erased.
+            `page_blocked`: MAX blocked the account (login.blocked); the login is
+            erased. `refresh_failed`: MAX refused 3 logins in a row, or answered
+            login.flood; the login is kept. `logged_out`: MAX ended the session
+            (from the MAX app, or MAX itself); the login is erased.
+          example: refresh_failed
         userID:
           $ref: '#/components/schemas/EventUserID'
         instanceID:

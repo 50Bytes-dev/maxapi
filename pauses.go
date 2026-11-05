@@ -15,14 +15,18 @@ import (
 // that it restricted, with an error whose code says so:
 // error.user.restricted.send, too.many.requests, error.limit.violate, a limit
 // on contact lookups. Carrying on after that is what turns a temporary
-// restriction into a block, so the gateway stops sending from the account
-// until the owner resumes it in retail. The contract is the one of the VK
-// gateway's page pause (../vkapi/API.md, "Page pause and captcha"), with spam
-// as the only reason:
-//   - POST /chat/send/text answers the request MAX refused by its stage (503
+// restriction into a block, so the gateway stops calling MAX for the account
+// until the owner resumes it. The contract is the one shared with the VK
+// gateway (C0, C6), with spam as the only reason so far:
+//   - a send or a delete answers the request MAX refused by its stage (503
 //     lookup_failed or 422 send_rejected) plus paused, pauseReason and
-//     upstreamCode. While paused it makes no MAX call and answers 422
-//     send_rejected with paused and pauseReason;
+//     upstreamCode; any other call that reaches MAX (an upload, the chat
+//     list, ...) answers 409 page_paused with them;
+//   - while paused no call makes a MAX call: a send or a delete answers 422
+//     send_rejected, any other call 409 page_paused, both with paused and
+//     pauseReason and without upstreamCode;
+//   - every gateway user of the account subscribed to Paused (or All) gets
+//     Paused when the pause starts, and Resumed when it ends;
 //   - GET /session/status and POST /session/connect (already connected)
 //     report the pause;
 //   - POST /session/resume lifts it.
@@ -40,6 +44,12 @@ const PauseSpam = "spam"
 // pauseCodeMarkers mark a MAX error code as a limit or a restriction. They
 // are matched case-insensitively anywhere in the code.
 var pauseCodeMarkers = []string{"restricted", "limit", "too.many", "flood", "spam"}
+
+// boundLimitMarkers mark a "limit" code as a bound on the request rather
+// than on the account: a file over the size limit, a text over the length
+// limit, a chat at its member limit. Such a code is no stop signal; only
+// "limit" is read this way, the other markers always pause.
+var boundLimitMarkers = []string{"size", "length", "file", "upload", "attach", "photo", "video", "audio", "participant", "member", "count", "text"}
 
 // pauseWriteTimeout bounds each database call of pausing and resuming: the
 // send answers within its own time budget.
@@ -73,9 +83,13 @@ func pauseCode(err error) (string, bool) {
 	}
 	lower := strings.ToLower(code)
 	for _, marker := range pauseCodeMarkers {
-		if strings.Contains(lower, marker) {
-			return code, true
+		if !strings.Contains(lower, marker) {
+			continue
 		}
+		if marker == "limit" && containsAny(lower, boundLimitMarkers) {
+			continue
+		}
+		return code, true
 	}
 	return "", false
 }
@@ -138,6 +152,12 @@ func (s *server) pauseAccount(userID string, maxUserID int64, upstreamCode strin
 		log.Error().Err(err).Int64("maxUserID", maxUserID).
 			Msg("Failed to store the account pause; it stays paused until a restart or a resume")
 	}
+	go s.notifyAccount(maxUserID, map[string]interface{}{
+		"type":         EventPaused,
+		"maxUserID":    maxUserID,
+		"pauseReason":  p.reason,
+		"upstreamCode": p.upstreamCode,
+	})
 	return &p
 }
 
@@ -160,6 +180,10 @@ func (s *server) resumeAccount(userID string, maxUserID int64) error {
 	delete(s.pauses.paused, maxUserID)
 	log.Info().Str("userID", userID).Int64("maxUserID", maxUserID).Str("upstreamCode", p.upstreamCode).
 		Dur("pausedFor", time.Since(p.since)).Msg("The owner resumed sending from the account")
+	go s.notifyAccount(maxUserID, map[string]interface{}{
+		"type":      EventResumed,
+		"maxUserID": maxUserID,
+	})
 	return nil
 }
 
@@ -183,6 +207,12 @@ func (s *server) restorePauses() error {
 	log.Info().Int("accounts", len(rows)).Msg("Restored paused MAX accounts")
 	return nil
 }
+
+// Event types of the account pause.
+const (
+	EventPaused  = "Paused"
+	EventResumed = "Resumed"
+)
 
 // addPauseFields reports the pause in a status or connect answer: paused
 // always, pauseReason and upstreamCode while paused.

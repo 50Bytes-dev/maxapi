@@ -145,9 +145,9 @@ func TestRejectedSendToCachedContactDropsIt(t *testing.T) {
 		cached  int // cached lookups after the send
 		lookups int // lookups MAX has received after the send
 	}{
-		{"chat.denied", http.StatusUnprocessableEntity, 1, 1}, // fresh lookup: kept
-		{"chat.denied", http.StatusUnprocessableEntity, 0, 1}, // cached id: dropped
-		{"", http.StatusOK, 1, 2},                             // looked up again
+		{"error.unknown", http.StatusUnprocessableEntity, 1, 1}, // fresh lookup: kept
+		{"error.unknown", http.StatusUnprocessableEntity, 0, 1}, // cached id: dropped
+		{"", http.StatusOK, 1, 2},                               // looked up again
 		{"too.many.requests", http.StatusUnprocessableEntity, 1, 2},
 	}
 	for i, step := range steps {
@@ -247,7 +247,9 @@ func TestLookupCacheGoesWithTheUser(t *testing.T) {
 		t.Fatalf("%d lookups cached, want 2", n)
 	}
 
-	s.safeDeleteUser(userID, false)
+	if err := s.removeUser(userID); err != nil {
+		t.Fatalf("delete the user: %v", err)
+	}
 
 	if n := cachedLookups(t, s, userID); n != 0 {
 		t.Fatalf("%d lookups left after the user was deleted", n)

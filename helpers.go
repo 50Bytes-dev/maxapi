@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,23 +33,6 @@ func envIntDefault(name string, def int) int {
 	return n
 }
 
-// newSafeHTTPClient returns an *http.Client whose dialer refuses to connect to
-// private/loopback/link-local/multicast IPs. Used for all server-initiated
-// outbound calls to mitigate SSRF when the target URL is attacker-influenced.
-// Set ALLOW_PRIVATE_IPS=true to disable the guard (dev/test only).
-func newSafeHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			DialContext:           safeDialContext,
-			TLSHandshakeTimeout:   5 * time.Second,
-			ResponseHeaderTimeout: 10 * time.Second,
-			MaxIdleConns:          10,
-			IdleConnTimeout:       90 * time.Second,
-		},
-	}
-}
-
 func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -60,32 +42,55 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	if err != nil {
 		return nil, err
 	}
-	for _, ip := range ips {
-		if isBlockedIP(ip.IP) {
-			return nil, fmt.Errorf("blocked IP %s (SSRF guard)", ip.IP)
-		}
-	}
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("no IPs resolved for %s", host)
 	}
+	if !fetchAllowedHost(host) {
+		for _, ip := range ips {
+			if isBlockedIP(ip.IP) {
+				return nil, &blockedAddrError{ip: ip.IP}
+			}
+		}
+	}
+	// The connection goes to the address just checked, never to a second
+	// resolution of the name.
 	d := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
 	return d.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
 }
 
+// blockedNets are the ranges the SSRF guard refuses besides what net.IP
+// classifies itself (loopback, private, link-local, multicast, unspecified).
+var blockedNets = func() []*net.IPNet {
+	var nets []*net.IPNet
+	for _, cidr := range []string{
+		"0.0.0.0/8",      // "this network"
+		"100.64.0.0/10",  // CGNAT
+		"192.0.0.0/24",   // IETF protocol assignments
+		"198.18.0.0/15",  // benchmarking
+		"240.0.0.0/4",    // reserved, broadcast
+		"64:ff9b:1::/48", // local-use NAT64
+		"2001:db8::/32",  // documentation
+	} {
+		_, n, err := net.ParseCIDR(cidr)
+		if err == nil {
+			nets = append(nets, n)
+		}
+	}
+	return nets
+}()
+
+// isBlockedIP reports whether the SSRF guard refuses ip. ALLOW_PRIVATE_IPS=true
+// turns the guard off (dev and test only).
 func isBlockedIP(ip net.IP) bool {
 	if strings.EqualFold(os.Getenv("ALLOW_PRIVATE_IPS"), "true") {
 		return false
 	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return true
 	}
-	for _, cidr := range []string{
-		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-		"100.64.0.0/10", "169.254.0.0/16",
-		"fc00::/7", "fe80::/10",
-	} {
-		_, block, err := net.ParseCIDR(cidr)
-		if err == nil && block.Contains(ip) {
+	for _, n := range blockedNets {
+		if n.Contains(ip) {
 			return true
 		}
 	}
@@ -225,47 +230,6 @@ func (s *server) Respond(w http.ResponseWriter, r *http.Request, statusCode int,
 	}
 }
 
-func isHTTPURL(input string) bool {
-	parsed, err := url.ParseRequestURI(input)
-	if err != nil {
-		return false
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return false
-	}
-	return parsed.Host != ""
-}
-
-func fetchURLBytes(resourceURL string) ([]byte, string, error) {
-	req, err := http.NewRequest("GET", resourceURL, nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	resp, err := globalHTTPClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
-	}
-
-	limitedBody := http.MaxBytesReader(nil, resp.Body, 10*1024*1024)
-	data, err := io.ReadAll(limitedBody)
-	if err != nil {
-		return nil, "", err
-	}
-
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = http.DetectContentType(data)
-	}
-
-	return data, contentType, nil
-}
-
 // Update entry in User map
 func updateUserInfo(values interface{}, field string, value string) interface{} {
 	log.Debug().Str("field", field).Str("value", value).Msg("User info updated")
@@ -349,7 +313,8 @@ func enrichWebhookPayload(payload map[string]string, userID string) map[string]i
 // never contains the user's API token — identity comes from userID/instanceID/
 // instanceName fields (see enrichWebhookPayload).
 func callHook(client *resty.Client, myurl string, payload map[string]string, id string) {
-	log.Info().Str("url", myurl).Msg("Sending POST to client " + id)
+	logURL := redactURL(myurl)
+	log.Info().Str("url", logURL).Msg("Sending POST to client " + id)
 
 	if client == nil {
 		log.Warn().Str("userID", id).Msg("HTTP client not found, skipping webhook")
@@ -385,17 +350,27 @@ func callHook(client *resty.Client, myurl string, payload map[string]string, id 
 		}
 
 		if err != nil {
-			log.Warn().Err(err).Str("url", myurl).Int("attempt", attempt).Msg("Webhook delivery failed (network)")
+			log.Warn().Err(err).Str("url", logURL).Int("attempt", attempt).Msg("Webhook delivery failed (network)")
 			continue
 		}
 		code := resp.StatusCode()
 		if !shouldRetryStatus(code) {
-			log.Info().Str("url", myurl).Int("status", code).Int("attempt", attempt).Msg("Webhook delivered")
+			log.Info().Str("url", logURL).Int("status", code).Int("attempt", attempt).Msg("Webhook delivered")
 			return
 		}
-		log.Warn().Str("url", myurl).Int("status", code).Int("attempt", attempt).Msg("Webhook delivery returned retriable status")
+		log.Warn().Str("url", logURL).Int("status", code).Int("attempt", attempt).Msg("Webhook delivery returned retriable status")
 	}
-	log.Error().Str("url", myurl).Int("attempts", maxAttempts).Str("userID", id).Msg("Webhook delivery exhausted retries")
+	log.Error().Str("url", logURL).Int("attempts", maxAttempts).Str("userID", id).Msg("Webhook delivery exhausted retries")
+}
+
+// redactURL is a webhook address for the log: scheme, host and path, without
+// the query (a ?secret= there is the receiver's secret) or user info.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(unparsable url)"
+	}
+	return u.Scheme + "://" + u.Host + u.Path
 }
 
 // stringifyForForm converts enriched payload values to their form-urlencoded
@@ -426,7 +401,8 @@ func stringifyForForm(v interface{}) string {
 // Guarded by userSemaphoreManager so a slow subscriber can't consume unbounded
 // file descriptors for a single user.
 func callHookFile(myurl string, payload map[string]string, id string, file string) error {
-	log.Info().Str("file", file).Str("url", myurl).Msg("Sending POST")
+	logURL := redactURL(myurl)
+	log.Info().Str("file", file).Str("url", logURL).Msg("Sending POST")
 
 	client := clientManager.GetHTTPClient(id)
 	if client == nil {
@@ -460,16 +436,16 @@ func callHookFile(myurl string, payload map[string]string, id string, file strin
 
 		if err != nil {
 			lastErr = err
-			log.Warn().Err(err).Str("url", myurl).Int("attempt", attempt).Msg("Webhook file delivery failed (network)")
+			log.Warn().Err(err).Str("url", logURL).Int("attempt", attempt).Msg("Webhook file delivery failed (network)")
 			continue
 		}
 		code := resp.StatusCode()
 		if !shouldRetryStatus(code) {
-			log.Info().Str("url", myurl).Int("status", code).Int("attempt", attempt).Msg("Webhook file delivered")
+			log.Info().Str("url", logURL).Int("status", code).Int("attempt", attempt).Msg("Webhook file delivered")
 			return nil
 		}
 		lastErr = fmt.Errorf("retriable status %d", code)
-		log.Warn().Str("url", myurl).Int("status", code).Int("attempt", attempt).Msg("Webhook file delivery returned retriable status")
+		log.Warn().Str("url", logURL).Int("status", code).Int("attempt", attempt).Msg("Webhook file delivery returned retriable status")
 	}
 
 	if lastErr == nil {

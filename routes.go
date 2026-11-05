@@ -83,7 +83,6 @@ func (s *server) routes() {
 	s.router.Handle("/session/logout", c.Then(s.Logout())).Methods("POST")
 	s.router.Handle("/session/status", c.Then(s.GetStatus())).Methods("GET")
 	s.router.Handle("/session/resume", c.Then(s.Resume())).Methods("POST")
-	s.router.Handle("/session/sync", c.Then(s.RequestSync())).Methods("POST")
 
 	// ========== WEBHOOK ENDPOINTS ==========
 	s.router.Handle("/webhook", c.Then(s.SetWebhook())).Methods("POST")
@@ -93,7 +92,6 @@ func (s *server) routes() {
 
 	// ========== MESSAGE ENDPOINTS ==========
 	s.router.Handle("/chat/send/text", c.Then(s.SendMessage())).Methods("POST")
-	s.router.Handle("/chat/send/image", c.Then(s.SendImage())).Methods("POST")
 	s.router.Handle("/chat/send/audio", c.Then(s.SendAudio())).Methods("POST")
 	s.router.Handle("/chat/send/document", c.Then(s.SendDocument())).Methods("POST")
 	s.router.Handle("/chat/send/video", c.Then(s.SendVideo())).Methods("POST")
@@ -102,6 +100,11 @@ func (s *server) routes() {
 	s.router.Handle("/chat/react", c.Then(s.React())).Methods("POST")
 	s.router.Handle("/chat/markread", c.Then(s.MarkRead())).Methods("POST")
 	s.router.Handle("/chat/history", c.Then(s.GetChatHistory())).Methods("POST")
+	s.router.Handle("/chat/list", c.Then(s.ListChats())).Methods("GET")
+	s.router.Handle("/chat/info", c.Then(s.ChatInfo())).Methods("GET")
+
+	// ========== MEDIA UPLOAD ==========
+	s.router.Handle("/media/photo", c.Then(s.UploadPhoto())).Methods("POST")
 	// Not implemented: /chat/send/sticker - Different system in MAX
 	// Not implemented: /chat/send/location - Not supported
 	// Not implemented: /chat/send/contact - Not supported
@@ -123,7 +126,6 @@ func (s *server) routes() {
 
 	// ========== GROUP ENDPOINTS ==========
 	s.router.Handle("/group/create", c.Then(s.CreateGroup())).Methods("POST")
-	s.router.Handle("/group/info", c.Then(s.GetGroupInfo())).Methods("POST")
 	s.router.Handle("/group/invitelink", c.Then(s.GetGroupInviteLink())).Methods("POST")
 	s.router.Handle("/group/join", c.Then(s.GroupJoin())).Methods("POST")
 	s.router.Handle("/group/leave", c.Then(s.GroupLeave())).Methods("POST")

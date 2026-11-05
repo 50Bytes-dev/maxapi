@@ -27,6 +27,8 @@ func TestMain(m *testing.M) {
 	// init() loads .env, which may name a real global webhook: the events
 	// the tests cause go only to their own receivers.
 	*globalWebhook = ""
+	// No spread of the logins at startup.
+	startupLoginInterval = 0
 	os.Exit(m.Run())
 }
 
@@ -49,7 +51,7 @@ func newTestServerAt(t *testing.T, dir string) *server {
 	if err := initializeSchema(db); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
-	s := &server{db: db, startTime: time.Now(), pauses: newPauseRegistry()}
+	s := &server{db: db, startTime: time.Now(), pauses: newPauseRegistry(), outcomes: newOutcomeChecks()}
 	if err := s.restorePauses(); err != nil {
 		t.Fatalf("restore pauses: %v", err)
 	}
@@ -99,10 +101,12 @@ const (
 	testPhone           = "79001234567"
 )
 
-// fakeFrame is one request the fake MAX server received.
+// fakeFrame is one request the fake MAX server received. Raw is its payload
+// as sent: Payload holds numbers as float64, which loses ids above 2^53.
 type fakeFrame struct {
 	Opcode  int
 	Payload map[string]interface{}
+	Raw     json.RawMessage
 }
 
 // fakeMAX is an in-process stand-in for the MAX WebSocket server. reply
@@ -136,7 +140,11 @@ func newFakeMAX(t *testing.T, reply func(f fakeFrame) map[string]interface{}) *f
 			if err := json.Unmarshal(data, &req); err != nil {
 				return
 			}
-			frame := fakeFrame{Opcode: req.Opcode, Payload: req.Payload}
+			var raw struct {
+				Payload json.RawMessage `json:"payload"`
+			}
+			_ = json.Unmarshal(data, &raw)
+			frame := fakeFrame{Opcode: req.Opcode, Payload: req.Payload, Raw: raw.Payload}
 			f.mu.Lock()
 			f.frames = append(f.frames, frame)
 			f.mu.Unlock()
@@ -183,6 +191,18 @@ func (f *fakeMAX) count(op maxclient.Opcode) int {
 		}
 	}
 	return n
+}
+
+// lastRaw returns the raw payload of the last frame with the opcode.
+func (f *fakeMAX) lastRaw(op maxclient.Opcode) json.RawMessage {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.frames) - 1; i >= 0; i-- {
+		if f.frames[i].Opcode == int(op) {
+			return f.frames[i].Raw
+		}
+	}
+	return nil
 }
 
 // lastPayload returns the payload of the last frame with the opcode.
@@ -383,10 +403,11 @@ func TestSendTextLookupTimeoutIsLookupFailed(t *testing.T) {
 }
 
 // MAX's limit and restriction codes also pause the account: pauses_test.go.
+// A refusal by a code that says nothing more is send_rejected.
 func TestSendTextRejectedByMAXIsSendRejected(t *testing.T) {
 	f := newFakeMAX(t, func(fakeFrame) map[string]interface{} {
 		return map[string]interface{}{
-			"error": "chat.denied", "message": "Chat denied", "title": "Denied",
+			"error": "error.unknown", "message": "Something", "title": "Error",
 		}
 	})
 	userID, _ := connectedUser(t, f)
@@ -394,11 +415,31 @@ func TestSendTextRejectedByMAXIsSendRejected(t *testing.T) {
 	status, body := call(t, newTestServer(t).SendMessage(), userID, `{"chatId": 5, "text": "hello"}`)
 
 	wantError(t, status, body, http.StatusUnprocessableEntity, "send_rejected")
-	if body["upstreamCode"] != "chat.denied" {
-		t.Fatalf("upstreamCode = %v, want MAX's code chat.denied", body["upstreamCode"])
+	if body["upstreamCode"] != "error.unknown" {
+		t.Fatalf("upstreamCode = %v, want MAX's code error.unknown", body["upstreamCode"])
 	}
 	if body["paused"] != nil {
 		t.Fatalf("an ordinary refusal paused the account: %v", body)
+	}
+}
+
+// MAX's codes of a chat the account may not write in (the web client's
+// chat.denied and channel.denied) answer address_refused (C0).
+func TestSendTextToDeniedChatIsAddressRefused(t *testing.T) {
+	for _, code := range []string{"chat.denied", "channel.denied"} {
+		t.Run(code, func(t *testing.T) {
+			f := newFakeMAX(t, func(fakeFrame) map[string]interface{} {
+				return map[string]interface{}{"error": code, "message": "Denied"}
+			})
+			userID, _ := connectedUser(t, f)
+
+			status, body := call(t, newTestServer(t).SendMessage(), userID, `{"chatId": -5, "text": "hello"}`)
+
+			wantError(t, status, body, http.StatusForbidden, "address_refused")
+			if body["upstreamCode"] != code || body["paused"] != nil {
+				t.Fatalf("got %v, want upstreamCode %s and no pause", body, code)
+			}
+		})
 	}
 }
 
@@ -478,15 +519,17 @@ func TestCheckUserReportsLookupErrors(t *testing.T) {
 		case "79000000001":
 			return contactReply(fr)
 		case "79000000003":
-			return map[string]interface{}{"error": "too.many.requests", "message": "Too many requests"}
+			return map[string]interface{}{"error": "service.unavailable", "message": "Try later"}
 		case "79000000004":
 			return notFoundReply(fr)
 		}
 		return map[string]interface{}{}
 	})
-	userID, _ := connectedUser(t, f)
+	s := newTestServer(t)
+	userID := t.Name()
+	sessionUser(t, s, f, userID)
 
-	status, body := call(t, (&server{}).CheckUser(), userID,
+	status, body := call(t, s.CheckUser(), userID,
 		`{"phone": ["79000000001", "79000000002", "79000000003", "12-34", "79000000004"]}`)
 	if status != http.StatusOK {
 		t.Fatalf("status %d %v, want 200", status, body)

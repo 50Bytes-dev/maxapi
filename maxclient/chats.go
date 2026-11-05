@@ -2,37 +2,75 @@ package maxclient
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
-// GetChatsList gets list of chats with marker for pagination
-func (c *Client) GetChatsList(marker float64) ([]map[string]interface{}, error) {
-	payload := map[string]interface{}{
-		"marker": marker,
+// ChatsPage is one page of the account's chats (CHATS_LIST, opcode 53).
+// Marker is where the next page starts, 0 when this is the last one.
+type ChatsPage struct {
+	Chats  []Chat
+	Marker int64
+}
+
+// flexInt64 reads an int64 sent as a JSON number or a string.
+type flexInt64 int64
+
+func (f *flexInt64) UnmarshalJSON(b []byte) error {
+	s := string(b)
+	if s == "null" {
+		return nil
 	}
+	if len(s) >= 2 && s[0] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	if s == "" {
+		return nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		var fl float64
+		if ferr := json.Unmarshal([]byte(s), &fl); ferr != nil {
+			return err
+		}
+		n = int64(fl)
+	}
+	*f = flexInt64(n)
+	return nil
+}
 
-	c.Logger.Info().Float64("marker", marker).Msg("Fetching chats list")
+// GetChatsList gets a page of the account's chats, the newest first, the way
+// the web client pages them: marker is the lastEventTime (unix ms) the page
+// starts before, LOGIN's chatMarker or the Marker of the previous page.
+// timeout 0 means DefaultTimeout.
+func (c *Client) GetChatsList(marker int64, timeout time.Duration) (*ChatsPage, error) {
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	c.Logger.Info().Int64("marker", marker).Msg("Fetching chats list")
 
-	resp, err := c.sendAndWait(OpChatsList, payload)
+	resp, err := c.sendAndWaitWithTimeout(OpChatsList, map[string]interface{}{"marker": marker}, timeout)
 	if err != nil {
 		return nil, err
 	}
-
-	var chats []map[string]interface{}
-	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
-		for _, chatRaw := range chatsRaw {
-			if chat, ok := chatRaw.(map[string]interface{}); ok {
-				chats = append(chats, chat)
-			}
-		}
+	var body struct {
+		Chats  []Chat    `json:"chats"`
+		Marker flexInt64 `json:"marker"`
 	}
-
-	c.Logger.Info().Int("count", len(chats)).Msg("Fetched chats")
-	return chats, nil
+	if err := resp.decodePayload(&body); err != nil {
+		return nil, ErrInvalidResponse
+	}
+	c.Logger.Info().Int("count", len(body.Chats)).Msg("Fetched chats")
+	return &ChatsPage{Chats: body.Chats, Marker: int64(body.Marker)}, nil
 }
 
 // GetChatHistory gets message history for a chat
 func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backward int) ([]Message, error) {
+	return c.GetChatHistoryWithin(chatID, fromTime, forward, backward, DefaultTimeout)
+}
+
+// GetChatHistoryWithin is GetChatHistory with a custom wait for MAX's answer.
+func (c *Client) GetChatHistoryWithin(chatID int64, fromTime int64, forward int, backward int, timeout time.Duration) ([]Message, error) {
 	if fromTime == 0 {
 		fromTime = time.Now().UnixMilli()
 	}
@@ -51,25 +89,22 @@ func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backw
 
 	c.Logger.Info().Int64("chatId", chatID).Int("backward", backward).Msg("Fetching chat history")
 
-	resp, err := c.sendAndWait(OpChatHistory, payload)
+	resp, err := c.sendAndWaitWithTimeout(OpChatHistory, payload, timeout)
 	if err != nil {
 		return nil, err
 	}
 
+	var body struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	if err := resp.decodePayload(&body); err != nil {
+		return nil, ErrInvalidResponse
+	}
 	var messages []Message
-
-	if msgsRaw, ok := resp.Payload["messages"].([]interface{}); ok {
-		for _, msgRaw := range msgsRaw {
-			msgMap, ok := msgRaw.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			msgBytes, _ := json.Marshal(msgMap)
-			var msg Message
-			if err := json.Unmarshal(msgBytes, &msg); err == nil {
-				messages = append(messages, msg)
-			}
+	for _, raw := range body.Messages {
+		var msg Message
+		if err := json.Unmarshal(raw, &msg); err == nil {
+			messages = append(messages, msg)
 		}
 	}
 
@@ -79,35 +114,25 @@ func (c *Client) GetChatHistory(chatID int64, fromTime int64, forward int, backw
 
 // GetChatInfo gets information about chats by IDs
 func (c *Client) GetChatInfo(chatIDs []int64) ([]Chat, error) {
-	payload := map[string]interface{}{
-		"chatIds": chatIDs,
-	}
+	return c.GetChatInfoWithin(chatIDs, DefaultTimeout)
+}
 
+// GetChatInfoWithin is GetChatInfo (CHAT_INFO, opcode 48) with a custom wait
+// for MAX's answer. MAX leaves out the chats the account does not see.
+func (c *Client) GetChatInfoWithin(chatIDs []int64, timeout time.Duration) ([]Chat, error) {
 	c.Logger.Info().Ints64("chatIds", chatIDs).Msg("Getting chat info")
 
-	resp, err := c.sendAndWait(OpChatInfo, payload)
+	resp, err := c.sendAndWaitWithTimeout(OpChatInfo, map[string]interface{}{"chatIds": chatIDs}, timeout)
 	if err != nil {
 		return nil, err
 	}
-
-	var chats []Chat
-
-	if chatsRaw, ok := resp.Payload["chats"].([]interface{}); ok {
-		for _, chatRaw := range chatsRaw {
-			chatMap, ok := chatRaw.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			chatBytes, _ := json.Marshal(chatMap)
-			var chat Chat
-			if err := json.Unmarshal(chatBytes, &chat); err == nil {
-				chats = append(chats, chat)
-			}
-		}
+	var body struct {
+		Chats []Chat `json:"chats"`
 	}
-
-	return chats, nil
+	if err := resp.decodePayload(&body); err != nil {
+		return nil, ErrInvalidResponse
+	}
+	return body.Chats, nil
 }
 
 // GetChat gets information about a single chat

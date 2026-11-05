@@ -2,6 +2,7 @@ package maxclient
 
 import (
 	"encoding/json"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,17 +15,40 @@ type SendMessageOptions struct {
 	Attachments []Attachment
 	Elements    []Element
 
+	// CID is the client id of the message, which MAX echoes in it: the key
+	// to find the message again. Zero takes the next of NextCID.
+	CID int64
+
 	// Timeout bounds the wait for MAX to acknowledge the message; zero means
 	// DefaultTimeout.
 	Timeout time.Duration
 }
 
+// NextCID returns a new client message id the way the web client makes one:
+// the current unix time in ms, and always above the previous one.
+func (c *Client) NextCID() int64 {
+	for {
+		prev := atomic.LoadInt64(&c.lastCID)
+		next := time.Now().UnixMilli()
+		if next <= prev {
+			next = prev + 1
+		}
+		if atomic.CompareAndSwapInt64(&c.lastCID, prev, next) {
+			return next
+		}
+	}
+}
+
 // SendMessage sends a text message to a chat
 // Note: ChatID=0 is valid for "Favorites/Saved Messages" chat
 func (c *Client) SendMessage(opts SendMessageOptions) (*Message, error) {
+	cid := opts.CID
+	if cid == 0 {
+		cid = c.NextCID()
+	}
 	message := map[string]interface{}{
 		"text": opts.Text,
-		"cid":  time.Now().UnixMilli(),
+		"cid":  cid,
 	}
 
 	if len(opts.Elements) > 0 {
@@ -104,18 +128,31 @@ func (c *Client) EditMessage(chatID int64, messageID int64, text string, attachm
 	return c.parseMessageFromResponse(resp.Payload)
 }
 
-// DeleteMessage deletes messages from a chat
-func (c *Client) DeleteMessage(chatID int64, messageIDs []int64, forMe bool) error {
+// DeleteMessages deletes messages (MSG_DELETE, opcode 66), for everyone when
+// forMe is false. MAX answers with the ids it deleted (messageIds), as the
+// web client reads it; known is false when the answer has no such list.
+func (c *Client) DeleteMessages(chatID int64, messageIDs []int64, forMe bool, timeout time.Duration) (deleted []int64, known bool, err error) {
 	payload := map[string]interface{}{
 		"chatId":     chatID,
 		"messageIds": messageIDs,
 		"forMe":      forMe,
 	}
+	c.Logger.Info().Int64("chatId", chatID).Int("count", len(messageIDs)).Bool("forMe", forMe).Msg("Deleting messages")
 
-	c.Logger.Info().Int64("chatId", chatID).Ints64("messageIds", messageIDs).Msg("Deleting messages")
-
-	_, err := c.sendAndWait(OpMsgDelete, payload)
-	return err
+	resp, err := c.sendAndWaitWithTimeout(OpMsgDelete, payload, timeout)
+	if err != nil {
+		return nil, false, err
+	}
+	var body struct {
+		MessageIDs *[]flexInt64 `json:"messageIds"`
+	}
+	if err := resp.decodePayload(&body); err != nil || body.MessageIDs == nil {
+		return nil, false, nil
+	}
+	for _, id := range *body.MessageIDs {
+		deleted = append(deleted, int64(id))
+	}
+	return deleted, true, nil
 }
 
 // MarkRead marks messages as read in a chat

@@ -6,13 +6,16 @@ MaxAPI is a multi-tenant REST API gateway for MAX Messenger, providing a simple 
 
 - **Multi-tenant architecture**: Support multiple MAX accounts on a single server
 - **QR Authentication**: Scan a QR code in the MAX mobile app to log in
-- **Account protection**: phone lookups are cached per gateway user (found contacts for 90 days, dropped when MAX refuses a send to them; MAX's `not.found` for 30 days); MAX's limit/restriction errors pause the MAX account, for every gateway user logged into it and across user deletion, new logins and restarts, until `POST /session/resume`; the reconnect loop stops after 3 login refusals in a row (token kept, next attempt on `POST /session/connect`) instead of logging in forever (see [API.md](API.md#account-pause))
+- **Account protection**: phone lookups cached per gateway user (found contacts for 90 days, MAX's `not.found` for 30 days), also for `/user/check`; MAX's limit/restriction errors on any call pause the MAX account for every gateway user logged into it (`Paused`/`Resumed` events), across user deletion, new logins and restarts, until `POST /session/resume`: the pause stops what the account does in MAX (sends, deletes, edits, uploads, lookups), not what it reads; the reconnect loop stops after 3 login refusals in a row, at once on `login.flood`, and erases the login on `login.blocked`; logins at startup are spread out (see [API.md](API.md#account-pause)). The gateway does not pace sends: the project that uses it does
+- **Chats**: the account's chats page by page, filtered by kind and title (`GET /chat/list`, `GET /chat/info`), with whether the account may write there; no message text unless asked for
+- **Photos uploaded once**: `POST /media/photo` answers an attachment that any chat of the account takes; up to 12 photos in one message (MAX's own limit); delete for everyone with a status per message
 - **Real-time webhooks**: Receive events via webhooks or RabbitMQ — with automatic retry on 5xx/network errors
 - **Durable RabbitMQ delivery**: Persistent messages, transparent reconnect, optional topic exchange with event-type routing keys
 - **Media handling**: Upload/download photos, videos, audio, and documents — per-user concurrency limit protects noisy users
+- **Work only on subscription**: an event a user is not subscribed to is dropped unparsed; incoming media is fetched only for `Message` subscribers; no message text in the log, tokens and phones masked
 - **Group management**: Create, manage, and interact with groups and channels
 - **S3 Integration**: Optional media storage in S3-compatible storage
-- **SSRF-safe outbound HTTP**: Loopback / RFC1918 / link-local destinations refused by default
+- **SSRF-safe fetches**: every URL a caller gives (a photo, a file to send, a download) is fetched only over http(s), never from a loopback, private, link-local, CGNAT, multicast or otherwise internal address (checked on the address actually dialled, also after a redirect), within a time limit and a size limit, with a 2xx answer; `ALLOW_PRIVATE_HOSTS` opens named hosts, `ALLOW_PRIVATE_IPS=true` turns the guard off (dev only)
 - **SQLite WAL by default**: Readers don't block writers; no external DB required for small deployments
 - **Health endpoint**: `GET /health` reports DB, RabbitMQ, connected users, memory, uptime
 
@@ -112,7 +115,11 @@ MAX_CONNECT_RETRIES=0               # 0 = infinite, otherwise fires ReconnectExh
 
 # Limits & security
 MAXAPI_USER_CONCURRENCY=4
-# ALLOW_PRIVATE_IPS=true            # only for dev/test; bypasses the SSRF guard
+MAXAPI_PHOTO_MAX_BYTES=10485760     # a photo: its download, its data and the body of POST /media/photo
+MAXAPI_MEDIA_MAX_BYTES=52428800     # any other media to send or download
+MAX_STARTUP_LOGIN_INTERVAL_MS=1000  # mean time between two logins at startup
+# ALLOW_PRIVATE_HOSTS=minio,storage.internal   # hosts the SSRF guard lets resolve to internal addresses
+# ALLOW_PRIVATE_IPS=true            # only for dev/test; turns the SSRF guard off
 
 # Misc
 TZ=Europe/Moscow
@@ -181,19 +188,22 @@ See [API.md](API.md) for the complete API documentation.
 - `POST /session/connect` - Open a session (starts QR flow if no auth token, else reconnects)
 - `GET /session/qr` - Get current QR code (base64 PNG) for an in-progress auth session
 - `POST /session/disconnect` - Disconnect / cancel in-progress QR session
-- `POST /session/logout` - Logout and remove user
-- `POST /session/sync` - Log in again with the stored MAX login and return MAX's login data (also as a `Sync` event)
-- `GET /session/status` - Connection / authentication status, account pause
+- `POST /session/logout` - End the MAX session and erase the login (the user stays)
+- `GET /session/status` - Connection / authentication status, the account's name and photo, account pause
 - `POST /session/resume` - Lift the pause MAX's limit/restriction errors put on the MAX account
 
+#### Chats and photos
+- `GET /chat/list` - The account's chats, page by page, filtered by kind and title
+- `GET /chat/info` - Chats by id
+- `POST /media/photo` - Upload a photo once, for any chat of the account
+
 #### Messages
-- `POST /chat/send/text` - Send text
-- `POST /chat/send/image` - Send image
+- `POST /chat/send/text` - Send text with up to 12 photos
 - `POST /chat/send/video` - Send video
 - `POST /chat/send/audio` - Send audio
 - `POST /chat/send/document` - Send document
 - `POST /chat/send/edit` - Edit message
-- `POST /chat/delete` - Delete messages
+- `POST /chat/delete` - Delete messages for everyone
 - `POST /chat/markread` - Mark as read
 - `POST /chat/history` - Get history
 - `POST /chat/react` - Add/remove reaction
@@ -212,7 +222,6 @@ See [API.md](API.md) for the complete API documentation.
 
 #### Groups
 - `POST /group/create` - Create group
-- `POST /group/info` - Get group info
 - `POST /group/invitelink` - Get invite link
 - `POST /group/join` - Join group
 - `POST /group/leave` - Leave group
@@ -244,23 +253,27 @@ See [API.md](API.md) for the complete API documentation.
 | `MessageEdit` | Message was edited |
 | `MessageDelete` | Message was deleted |
 | `ReadReceipt` | Messages were read |
-| `Connected` | Connected to MAX |
-| `Disconnected` | Disconnected |
+| `Sync` | The session is logged in: `maxUserID`, `reconnect`, `name`, `photo` |
+| `Disconnected` | MAX told the client to reconnect |
 | `Reconnecting` | Reconnect attempt in progress (emitted every 10th attempt) |
 | `ReconnectExhausted` | Reconnect budget (`MAX_CONNECT_RETRIES`) exhausted; session stopped |
 | `QRGenerated` | New (or refreshed) QR code — payload carries `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt` |
 | `QRScanned` | User scanned QR code in the mobile app |
 | `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
 | `QRExpired` | QR refresh budget exhausted or session cancelled |
-| `AuthExpired` | The reconnect loop stopped: an auth error (token erased, new QR login needed) or 3 reconnect logins in a row refused by MAX (token kept, `POST /session/connect` tries again); `reason` carries the error |
-| `LoggedOut` | MAX ended the session; the user is deleted and its reconnect loop stops |
-| `ChatUpdate` | Chat was updated |
+| `AuthExpired` | The session stopped and will not reconnect by itself; `reason` is `token_revoked`, `page_blocked`, `refresh_failed` (login kept) or `logged_out` (MAX ended the session; the user stays) |
+| `Paused` | The MAX account was paused; to every gateway user of it |
+| `Resumed` | The pause was lifted; to every gateway user of it |
+| `MessageOutcome` | The later outcome of a send with a `ref` answered `send_failed` |
+| `ChatUpdate` | Chat was updated (without its last message) |
 | `Typing` | User is typing |
 | `ReactionChange` | Reaction changed |
 | `ContactUpdate` | Contact updated |
 | `PresenceUpdate` | Presence changed |
-| `FileReady` | File upload complete |
 | `All` | All events |
+
+`Connected`, `FileReady`, `HistorySync` and `LoggedOut` are accepted in a
+subscription and never sent.
 
 ### Webhook Payload
 
@@ -292,7 +305,7 @@ curl http://localhost:5555/health
 {
     "success": true,
     "status": "ok",
-    "version": "1.5.1",
+    "version": "2.0.0",
     "uptime_seconds": 12345,
     "db_ok": true,
     "rabbitmq_ok": true,
@@ -320,6 +333,14 @@ maxapi/
 ├── migrations.go     # Schema migrations
 ├── lookups.go        # Phone lookup cache
 ├── pauses.go         # Account pause on MAX limit/restriction errors
+├── notify.go         # Events of the MAX account (Paused, Resumed) to all its users
+├── codes.go          # Codes of the contract shared with vkapi
+├── delivery.go       # Sending and deleting: checks, codes, ref
+├── outcome.go        # MessageOutcome: the later check of send_failed
+├── chats.go          # GET /chat/list, GET /chat/info
+├── media.go          # POST /media/photo
+├── fetch.go          # SSRF-guarded fetches of callers' URLs
+├── generic.go        # Other calls that reach MAX
 ├── rabbitmq.go       # RabbitMQ integration
 ├── s3manager.go      # S3 integration
 └── maxclient/        # MAX API client package

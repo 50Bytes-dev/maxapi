@@ -1,7 +1,46 @@
 package main
 
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 // Request and response shapes of the API. static/api/spec.yml is the
 // schema; TestSpecMatchesRoutes keeps its operations in step with routes.go.
+
+// msgID is a MAX message id. MAX's ids are above 2^53, past what a JSON
+// number keeps exactly in most languages, so the API gives them as strings.
+// A JSON number is read too.
+type msgID int64
+
+func (m *msgID) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "null" {
+		return nil
+	}
+	if strings.HasPrefix(s, `"`) {
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		s = strings.TrimSpace(s)
+		if s == "" {
+			*m = 0
+			return nil
+		}
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return fmt.Errorf("a message id is not an integer: %s", s)
+	}
+	*m = msgID(n)
+	return nil
+}
+
+func (m msgID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(strconv.FormatInt(int64(m), 10))
+}
 
 // ========== BASE RESPONSE ==========
 
@@ -42,9 +81,9 @@ type ResumeResponse struct {
 
 // SendMessageResponse represents the response after sending a message
 type SendMessageResponse struct {
-	Success   bool  `json:"success" example:"true"`
-	MessageID int64 `json:"messageId" example:"987654321"`
-	ChatID    int64 `json:"chatId,omitempty" example:"123456789"`
+	Success   bool   `json:"success" example:"true"`
+	MessageID string `json:"messageId" example:"115478893120847321"`
+	ChatID    int64  `json:"chatId,omitempty" example:"123456789"`
 }
 
 // DownloadMediaResponse represents the response for downloading media
@@ -155,42 +194,37 @@ type ResumeBody struct {
 	CaptchaKey string `json:"captchaKey,omitempty" example:""`
 }
 
-// MessageBody represents the request body for sending a text message
+// MessageBody is the body of POST /chat/send/text. attachments are tokens of
+// POST /media/photo; ref is the caller's id of the message (C8); notify is
+// true when left out (notifyOf).
 type MessageBody struct {
-	ChatID  int64  `json:"chatId" example:"123456789"`
-	Phone   string `json:"phone" example:"79001234567"`
-	Text    string `json:"text" example:"Hello, World!"`
-	ReplyTo int64  `json:"replyTo" example:"0"`
-	Notify  bool   `json:"notify" example:"true"`
+	ChatID      int64    `json:"chatId" example:"123456789"`
+	Phone       string   `json:"phone" example:"79001234567"`
+	Text        string   `json:"text" example:"Hello, World!"`
+	ReplyTo     msgID    `json:"replyTo"`
+	Notify      *bool    `json:"notify" example:"true"`
+	Attachments []string `json:"attachments"`
+	Ref         string   `json:"ref"`
 }
 
 // EditMessageBody represents the request body for editing a message
 type EditMessageBody struct {
 	ChatID    int64  `json:"chatId" example:"123456789"`
-	MessageID int64  `json:"messageId" example:"987654321"`
+	MessageID msgID  `json:"messageId"`
 	Text      string `json:"text" example:"Updated message"`
 }
 
 // MarkReadBody represents the request body for marking messages as read
 type MarkReadBody struct {
 	ChatID    int64 `json:"chatId" example:"123456789"`
-	MessageID int64 `json:"messageId" example:"987654321"`
+	MessageID msgID `json:"messageId"`
 }
 
-// DeleteMessageBody represents the request body for deleting messages
+// DeleteMessageBody is the body of POST /chat/delete: up to 100 ids of
+// messages of one chat, deleted for everyone.
 type DeleteMessageBody struct {
 	ChatID     int64   `json:"chatId" example:"123456789"`
-	MessageIDs []int64 `json:"messageIds"`
-	ForMe      bool    `json:"forMe" example:"false"`
-}
-
-// ImageBody represents the request body for sending an image
-type ImageBody struct {
-	ChatID  int64  `json:"chatId" example:"123456789"`
-	Phone   string `json:"phone" example:"79001234567"`
-	Image   string `json:"image" example:"data:image/jpeg;base64,..."`
-	Caption string `json:"caption" example:"Image caption"`
-	Notify  bool   `json:"notify" example:"true"`
+	MessageIDs []msgID `json:"messageIds"`
 }
 
 // DocumentBody represents the request body for sending a document
@@ -200,7 +234,8 @@ type DocumentBody struct {
 	Document string `json:"document" example:"data:application/pdf;base64,..."`
 	FileName string `json:"fileName" example:"document.pdf"`
 	Caption  string `json:"caption" example:"Document caption"`
-	Notify   bool   `json:"notify" example:"true"`
+	Notify   *bool  `json:"notify" example:"true"`
+	Ref      string `json:"ref"`
 }
 
 // AudioBody represents the request body for sending audio
@@ -209,7 +244,8 @@ type AudioBody struct {
 	Phone    string `json:"phone" example:"79001234567"`
 	Audio    string `json:"audio" example:"data:audio/mp3;base64,..."`
 	FileName string `json:"fileName" example:"audio.mp3"`
-	Notify   bool   `json:"notify" example:"true"`
+	Notify   *bool  `json:"notify" example:"true"`
+	Ref      string `json:"ref"`
 }
 
 // VideoBody represents the request body for sending a video
@@ -219,7 +255,8 @@ type VideoBody struct {
 	Video    string `json:"video" example:"data:video/mp4;base64,..."`
 	Caption  string `json:"caption" example:"Video caption"`
 	FileName string `json:"fileName" example:"video.mp4"`
-	Notify   bool   `json:"notify" example:"true"`
+	Notify   *bool  `json:"notify" example:"true"`
+	Ref      string `json:"ref"`
 }
 
 // CheckUserBody represents the request body for checking users
@@ -299,7 +336,7 @@ type DownloadBody struct {
 // DownloadFileBody represents the request body for downloading files
 type DownloadFileBody struct {
 	ChatID    int64 `json:"chatId" example:"123456789"`
-	MessageID int64 `json:"messageId" example:"987654321"`
+	MessageID msgID `json:"messageId"`
 	FileID    int64 `json:"fileId" example:"111222333"`
 	VideoID   int64 `json:"videoId" example:"111222333"`
 }
@@ -351,7 +388,7 @@ type UserDetailResponse struct {
 type HealthResponse struct {
 	Success        bool   `json:"success" example:"true"`
 	Status         string `json:"status" example:"ok"`
-	Version        string `json:"version" example:"1.5.1"`
+	Version        string `json:"version" example:"2.0.0"`
 	UptimeSeconds  int64  `json:"uptime_seconds" example:"12345"`
 	DBOk           bool   `json:"db_ok" example:"true"`
 	RabbitMQOk     bool   `json:"rabbitmq_ok" example:"true"`
@@ -361,7 +398,7 @@ type HealthResponse struct {
 	Timestamp      int64  `json:"timestamp" example:"1700000000"`
 }
 
-// AddUserBody represents the request body for adding a user
+// AddUserBody represents the request body for adding a user.
 type AddUserBody struct {
 	Name    string `json:"name" example:"John Doe"`
 	Webhook string `json:"webhook" example:"https://example.com/webhook"`

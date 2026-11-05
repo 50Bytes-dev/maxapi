@@ -20,6 +20,26 @@ type Response struct {
 	Seq     int                    `json:"seq"`
 	Opcode  int                    `json:"opcode"`
 	Payload map[string]interface{} `json:"payload"`
+
+	// RawPayload is the payload as MAX sent it. Payload holds its numbers as
+	// float64, which loses ids above 2^53 (message ids are ~1.2e17): typed
+	// decoding reads RawPayload instead (decodePayload).
+	RawPayload json.RawMessage `json:"-"`
+}
+
+// decodePayload decodes the response payload into v from the raw bytes, so
+// int64 ids keep every digit. A response built without raw bytes (tests)
+// falls back to re-encoding Payload.
+func (r *Response) decodePayload(v interface{}) error {
+	raw := r.RawPayload
+	if len(raw) == 0 {
+		b, err := json.Marshal(r.Payload)
+		if err != nil {
+			return err
+		}
+		raw = b
+	}
+	return json.Unmarshal(raw, v)
 }
 
 // UserAgent represents user agent information for connection
@@ -56,7 +76,18 @@ type User struct {
 	Link          string   `json:"link,omitempty"`
 	UpdateTime    int64    `json:"updateTime,omitempty"`
 	WebApp        string   `json:"webApp,omitempty"`
+	// Phone is the contact's number, when MAX shows it to the account.
+	Phone            int64 `json:"phone,omitempty"`
+	RegistrationTime int64 `json:"registrationTime,omitempty"`
 }
+
+// Account statuses of a MAX user (User.AccountStatus), as the web client
+// names them.
+const (
+	AccountStatusActive  = 0
+	AccountStatusBlocked = 1
+	AccountStatusRemoved = 2
+)
 
 // Me represents the current authenticated user
 type Me struct {
@@ -66,6 +97,43 @@ type Me struct {
 	Names         []Name   `json:"names"`
 	UpdateTime    int64    `json:"updateTime"`
 	Options       []string `json:"options,omitempty"`
+	BaseURL       string   `json:"baseUrl,omitempty"`
+	BaseRawURL    string   `json:"baseRawUrl,omitempty"`
+	PhotoID       int64    `json:"photoId,omitempty"`
+}
+
+// DisplayName is the name MAX shows for the account: its first ONEME name,
+// else the first name of any kind.
+func DisplayName(names []Name) string {
+	pick := func(n Name) string {
+		if n.Name != "" {
+			return n.Name
+		}
+		return joinName(n.FirstName, n.LastName)
+	}
+	for _, n := range names {
+		if n.Type == "ONEME" {
+			if v := pick(n); v != "" {
+				return v
+			}
+		}
+	}
+	for _, n := range names {
+		if v := pick(n); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func joinName(first, last string) string {
+	switch {
+	case first == "":
+		return last
+	case last == "":
+		return first
+	}
+	return first + " " + last
 }
 
 // Contact represents a contact
@@ -222,32 +290,80 @@ type ChatOptions struct {
 	MembersCanSeePrivateLink    bool `json:"MEMBERS_CAN_SEE_PRIVATE_LINK,omitempty"`
 }
 
-// Chat represents a MAX chat (group/channel)
+// AdminParticipant is an admin's entry in a chat's adminParticipants: the
+// rights the owner gave them (AdminPerm* bits).
+type AdminParticipant struct {
+	ID          int64 `json:"id"`
+	Permissions int64 `json:"permissions"`
+	InviterID   int64 `json:"inviterId,omitempty"`
+}
+
+// Bits of a chat's restrictions, as the MAX web client reads them.
+const (
+	RestrictionInvite      = 1
+	RestrictionModifyIcon  = 2
+	RestrictionModifyTitle = 4
+	RestrictionLeaveChat   = 8
+	RestrictionPin         = 16
+	RestrictionLiveLoc     = 32
+	RestrictionInput       = 64 // the account may not write in the chat
+	RestrictionToggleBot   = 128
+	RestrictionComplaint   = 256
+	RestrictionMuteBot     = 8192
+)
+
+// Bits of an admin's permissions in a chat or channel, as the MAX web client
+// reads them. A channel takes posts from admins with AdminPermPostMessage or
+// AdminPermPostEditDelete.
+const (
+	AdminPermPostEditDelete = 1
+	AdminPermAddRemove      = 2
+	AdminPermAddAdmin       = 4
+	AdminPermChangeInfo     = 8
+	AdminPermPin            = 16
+	AdminPermReadAll        = 32
+	AdminPermCall           = 64
+	AdminPermEditLink       = 128
+	AdminPermPostMessage    = 256
+	AdminPermEditMessage    = 512
+	AdminPermDeleteMessage  = 1024
+	AdminPermViewStats      = 2048
+)
+
+// Chat represents a MAX chat: a dialog, a group chat or a channel, as LOGIN,
+// CHATS_LIST (53), CHAT_INFO (48) and CHAT_SEARCH (68) give it. Options
+// keeps every flag MAX sends (A_PLUS_CHANNEL, OFFICIAL, SERVICE_CHAT, ...).
 type Chat struct {
-	ID                       int64                  `json:"id"`
-	CID                      int64                  `json:"cid,omitempty"`
-	Type                     ChatType               `json:"type"`
-	Title                    string                 `json:"title,omitempty"`
-	Description              string                 `json:"description,omitempty"`
-	Owner                    int64                  `json:"owner,omitempty"`
-	Access                   AccessType             `json:"access,omitempty"`
-	Link                     string                 `json:"link,omitempty"`
-	Participants             map[string]int64       `json:"participants,omitempty"`
-	ParticipantsCount        int                    `json:"participantsCount,omitempty"`
-	Admins                   []int64                `json:"admins,omitempty"`
-	AdminParticipants        map[string]interface{} `json:"adminParticipants,omitempty"`
-	LastMessage              *Message               `json:"lastMessage,omitempty"`
-	Options                  ChatOptions            `json:"options,omitempty"`
-	Created                  int64                  `json:"created,omitempty"`
-	Modified                 int64                  `json:"modified,omitempty"`
-	JoinTime                 int64                  `json:"joinTime,omitempty"`
-	MessagesCount            int                    `json:"messagesCount,omitempty"`
-	Status                   string                 `json:"status,omitempty"`
-	BaseIconURL              string                 `json:"baseIconUrl,omitempty"`
-	BaseRawIconURL           string                 `json:"baseRawIconUrl,omitempty"`
-	LastEventTime            int64                  `json:"lastEventTime,omitempty"`
-	LastDelayedUpdateTime    int64                  `json:"lastDelayedUpdateTime,omitempty"`
-	LastFireDelayedErrorTime int64                  `json:"lastFireDelayedErrorTime,omitempty"`
+	ID                       int64                       `json:"id"`
+	CID                      int64                       `json:"cid,omitempty"`
+	Type                     ChatType                    `json:"type"`
+	Title                    string                      `json:"title,omitempty"`
+	Description              string                      `json:"description,omitempty"`
+	Owner                    int64                       `json:"owner,omitempty"`
+	Access                   AccessType                  `json:"access,omitempty"`
+	Link                     string                      `json:"link,omitempty"`
+	Participants             map[string]int64            `json:"participants,omitempty"`
+	ParticipantsCount        int                         `json:"participantsCount,omitempty"`
+	Admins                   []int64                     `json:"admins,omitempty"`
+	AdminParticipants        map[string]AdminParticipant `json:"adminParticipants,omitempty"`
+	LastMessage              *Message                    `json:"lastMessage,omitempty"`
+	Options                  map[string]bool             `json:"options,omitempty"`
+	Restrictions             int64                       `json:"restrictions,omitempty"`
+	ParticipantSettings      int64                       `json:"participantSettings,omitempty"`
+	InvitedBy                int64                       `json:"invitedBy,omitempty"`
+	HasBots                  bool                        `json:"hasBots,omitempty"`
+	NewMessages              int                         `json:"newMessages,omitempty"`
+	PrevMessageID            string                      `json:"prevMessageId,omitempty"`
+	Created                  int64                       `json:"created,omitempty"`
+	Modified                 int64                       `json:"modified,omitempty"`
+	JoinTime                 int64                       `json:"joinTime,omitempty"`
+	MessagesCount            int                         `json:"messagesCount,omitempty"`
+	Status                   string                      `json:"status,omitempty"`
+	BaseIconURL              string                      `json:"baseIconUrl,omitempty"`
+	BaseRawIconURL           string                      `json:"baseRawIconUrl,omitempty"`
+	LastEventTime            int64                       `json:"lastEventTime,omitempty"`
+	LastDelayedUpdateTime    int64                       `json:"lastDelayedUpdateTime,omitempty"`
+	LastFireDelayedErrorTime int64                       `json:"lastFireDelayedErrorTime,omitempty"`
 }
 
 // Dialog represents a direct message conversation
@@ -333,4 +449,3 @@ type SyncResponse struct {
 	Chats    []json.RawMessage `json:"chats"`
 	Contacts []Contact         `json:"contacts,omitempty"`
 }
-

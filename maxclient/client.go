@@ -70,6 +70,7 @@ type Client struct {
 
 	// State
 	seq           int32
+	lastCID       int64
 	isConnected   bool
 	isConnectedMu sync.RWMutex
 
@@ -170,6 +171,7 @@ func (c *Client) Connect() error {
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: DefaultTimeout,
+		WriteBufferSize:  wsWriteBufferSize,
 	}
 
 	header := http.Header{}
@@ -293,6 +295,9 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 	if err != nil {
 		return nil, err
 	}
+	if len(msgBytes) > wsWriteBufferSize {
+		return nil, ErrFrameTooLarge
+	}
 
 	c.Logger.Debug().
 		Int("seq", seq).
@@ -322,12 +327,13 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 
 		// Check for error in response
 		if err := ParseError(resp.Payload); err != nil {
-			// Log detailed error information for debugging
+			// The payload goes to the log with every token masked: an error
+			// answer may echo the request.
 			c.Logger.Error().
 				Err(err).
 				Int("opcode", resp.Opcode).
 				Int("seq", resp.Seq).
-				Interface("payload", resp.Payload).
+				Str("payload", payloadForLog(resp.Payload)).
 				Msg("Server returned error")
 			return resp, err
 		}
@@ -339,6 +345,15 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 		return nil, ErrNotConnected
 	}
 }
+
+// wsWriteBufferSize is the WebSocket's write buffer, and so the longest
+// request written as one frame. gorilla/websocket splits a longer message
+// into continuation frames, and MAX closes the connection on them: live on
+// 2026-11-05 every request over the default 4 KiB (a text of 4000 Latin
+// letters) dropped the session. 64 KiB holds the longest request the gateway
+// makes (4000 UTF-16 units of text, escaped, and 10 attachments); a longer
+// one is refused with ErrFrameTooLarge, never written.
+const wsWriteBufferSize = 64 << 10
 
 // writeFrame writes one frame to the connection. Every writer goes through
 // it: requests from HTTP handlers and the ping goroutine run concurrently.
@@ -390,6 +405,12 @@ func (c *Client) receiveLoop() {
 		if err := json.Unmarshal(message, &resp); err != nil {
 			c.Logger.Warn().Err(err).Msg("Failed to parse message")
 			continue
+		}
+		var frame struct {
+			Payload json.RawMessage `json:"payload"`
+		}
+		if json.Unmarshal(message, &frame) == nil {
+			resp.RawPayload = frame.Payload
 		}
 
 		c.Logger.Debug().

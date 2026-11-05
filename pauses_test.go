@@ -123,7 +123,7 @@ func TestLimitErrorPausesTheAccount(t *testing.T) {
 
 // Other MAX refusals leave the account alone.
 func TestOtherMAXErrorsDoNotPause(t *testing.T) {
-	f := newFakeMAX(t, refusingMAX(maxclient.OpMsgSend, "chat.denied", refusing()))
+	f := newFakeMAX(t, refusingMAX(maxclient.OpMsgSend, "error.unknown", refusing()))
 	s := newTestServer(t)
 	userID := t.Name()
 	sessionUser(t, s, f, userID)
@@ -210,9 +210,9 @@ func TestPauseCoversEveryGatewayUserOfTheAccount(t *testing.T) {
 	}
 }
 
-// The pause outlives the gateway user: a LoggedOut deletes it, and the owner
-// logs in again through a new gateway user into the same, still restricted
-// MAX account. That one is paused from the start, without a session (the
+// The pause outlives the gateway user: DELETE /admin/users deletes it, and
+// the owner logs in again through a new gateway user into the same, still
+// restricted MAX account. That one is paused from the start, without a session (the
 // status reads the stored MAX account), after a restart, and on connect.
 func TestPauseOutlivesTheUser(t *testing.T) {
 	dir := t.TempDir()
@@ -222,7 +222,9 @@ func TestPauseOutlivesTheUser(t *testing.T) {
 	sessionUser(t, before, f, oldUser)
 	pauseUser(t, before, oldUser)
 
-	before.safeDeleteUser(oldUser, false)
+	if err := before.removeUser(oldUser); err != nil {
+		t.Fatalf("delete the old user: %v", err)
+	}
 
 	if _, ok := storedPause(t, before, testSelfID); !ok {
 		t.Fatalf("the stored pause went with the gateway user")

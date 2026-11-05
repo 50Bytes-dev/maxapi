@@ -6,6 +6,8 @@ import (
 	"errors"
 	"time"
 
+	"maxapi/maxclient"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -62,12 +64,12 @@ func (s *server) cachedLookup(userID, phone string) (contactID int64, known bool
 		if age >= foundTTL {
 			return 0, false
 		}
-		log.Info().Str("userID", userID).Str("phone", phone).Int64("contactId", row.MaxUserID.Int64).
+		log.Info().Str("userID", userID).Str("phone", maxclient.MaskPhone(phone)).Int64("contactId", row.MaxUserID.Int64).
 			Msg("Phone lookup answered from the cache")
 		return row.MaxUserID.Int64, true
 	}
 	if age < notFoundTTL {
-		log.Info().Str("userID", userID).Str("phone", phone).
+		log.Info().Str("userID", userID).Str("phone", maxclient.MaskPhone(phone)).
 			Msg("Phone lookup answered from the cache: MAX has no such user")
 		return 0, true
 	}
@@ -102,6 +104,6 @@ func (s *server) dropLookup(userID, phone string) {
 		log.Warn().Err(err).Str("userID", userID).Msg("Failed to drop the cached phone lookup")
 		return
 	}
-	log.Info().Str("userID", userID).Str("phone", phone).
+	log.Info().Str("userID", userID).Str("phone", maxclient.MaskPhone(phone)).
 		Msg("MAX refused a send to the cached contact; the number will be looked up again")
 }

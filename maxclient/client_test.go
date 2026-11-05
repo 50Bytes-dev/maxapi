@@ -61,9 +61,9 @@ func TestConcurrentRequestsDoNotWriteConcurrently(t *testing.T) {
 	}
 	t.Cleanup(func() { c.Close() })
 
-	// Frames larger than the write buffer go out in pieces, which widens the
-	// window two unsynchronized writers would overlap in.
-	pad := strings.Repeat("x", 64<<10)
+	// Long frames, just under the longest one written, widen the window two
+	// unsynchronized writers would overlap in.
+	pad := strings.Repeat("x", wsWriteBufferSize-1024)
 	var wg sync.WaitGroup
 	for i := 0; i < 16; i++ {
 		wg.Add(1)

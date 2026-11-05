@@ -109,14 +109,11 @@ func shortBackoff(t *testing.T) {
 	t.Cleanup(func() { reconnectDelayUnit = old })
 }
 
-// reconnectLoops are the two loops that keep a session up: runClientLoop
-// after a connect, maintainConnection after /session/sync.
+// reconnectLoops are the loops that keep a session up: runClientLoop, after
+// a connect. (maintainConnection went with POST /session/sync in 2.0.0.)
 var reconnectLoops = map[string]func(s *server, userID string, c *maxclient.Client, mycli *MyClient){
 	"runClientLoop": func(s *server, userID string, c *maxclient.Client, mycli *MyClient) {
 		s.runClientLoop(userID, "stored-auth-token", c, mycli)
-	},
-	"maintainConnection": func(s *server, userID string, c *maxclient.Client, mycli *MyClient) {
-		s.maintainConnection(userID, "stored-auth-token", "test-device", mycli.token, mycli)
 	},
 }
 
@@ -218,8 +215,9 @@ func (r *loginRig) assertStoppedKeepingToken(t *testing.T, done <-chan struct{},
 // MAX refusing the reconnect login with its own error, not an auth one,
 // used to be retried forever; logging in again after MAX ended a session is
 // what gets an account blocked. The third refusal in a row stops the loop
-// with AuthExpired carrying MAX's code. The token stays: a partial MAX
-// failure must not send every owner through a new QR login.
+// with AuthExpired refresh_failed (MAX's code goes to the log). The token
+// stays: a partial MAX failure must not send every owner through a new QR
+// login.
 func TestReconnectStopsAfterThreeLoginRefusals(t *testing.T) {
 	shortBackoff(t)
 	for name, loop := range reconnectLoops {
@@ -230,7 +228,7 @@ func TestReconnectStopsAfterThreeLoginRefusals(t *testing.T) {
 
 			done := startLoop(r.s, r.userID, r.c, r.mycli, loop)
 
-			r.assertStoppedKeepingToken(t, done, "account.blocked")
+			r.assertStoppedKeepingToken(t, done, ReasonRefreshFailed)
 		})
 	}
 }
@@ -245,7 +243,7 @@ func TestReconnectStopsAfterThreeLoginTimeouts(t *testing.T) {
 
 			done := startLoop(r.s, r.userID, r.c, r.mycli, loop)
 
-			r.assertStoppedKeepingToken(t, done, "login timed out")
+			r.assertStoppedKeepingToken(t, done, ReasonRefreshFailed)
 		})
 	}
 }
@@ -261,8 +259,8 @@ func TestReconnectAuthErrorErasesTheToken(t *testing.T) {
 	done := startLoop(r.s, r.userID, r.c, r.mycli, reconnectLoops["runClientLoop"])
 
 	waitStopped(t, done)
-	if ev := r.sink.waitFor(t, "AuthExpired"); !strings.Contains(ev["reason"], "login.token") {
-		t.Fatalf("AuthExpired reason = %q, want the auth error", ev["reason"])
+	if ev := r.sink.waitFor(t, "AuthExpired"); ev["reason"] != ReasonTokenRevoked {
+		t.Fatalf("AuthExpired reason = %q, want %q", ev["reason"], ReasonTokenRevoked)
 	}
 	if n := r.f.count(maxclient.OpLogin); n != 1 {
 		t.Fatalf("MAX received %d logins, want 1", n)
@@ -366,11 +364,11 @@ func TestReconnectBackoffIsSpread(t *testing.T) {
 	}
 }
 
-// LoggedOut from MAX deletes the user. The kill signal used to go out after
-// cleanupClient had dropped the channel, so the loop went on with the
-// deleted user's token; and the LoggedOut webhook, sent right before the
-// cleanup, found the HTTP client gone and was dropped.
-func TestLoggedOutStopsTheLoopAndReachesTheWebhook(t *testing.T) {
+// LoggedOut from MAX ends the login and keeps the gateway user (M12): the
+// loop stops, the stored login is erased, AuthExpired logged_out reaches the
+// webhook (taken before the cleanup drops the HTTP client), and the token
+// keeps working for the QR login that follows.
+func TestLoggedOutKeepsTheUserAndErasesTheLogin(t *testing.T) {
 	for name, loop := range reconnectLoops {
 		t.Run(name, func(t *testing.T) {
 			f := newFakeMAX(t, emptyReply)
@@ -391,23 +389,33 @@ func TestLoggedOutStopsTheLoopAndReachesTheWebhook(t *testing.T) {
 
 			waitStopped(t, done)
 			if c.IsConnected() {
-				t.Fatalf("the MaxClient of the deleted user is still connected")
+				t.Fatalf("the MaxClient is still connected")
 			}
-			sink.waitFor(t, "LoggedOut")
-			if _, found := userinfocache.Get(tokenOf(userID)); found {
-				t.Fatalf("the deleted user is still in userinfocache")
+			if ev := sink.waitFor(t, "AuthExpired"); ev["reason"] != ReasonLoggedOut {
+				t.Fatalf("AuthExpired reason = %q, want %q", ev["reason"], ReasonLoggedOut)
+			}
+			for _, typ := range sink.delivered() {
+				if typ == "LoggedOut" {
+					t.Fatalf("LoggedOut was sent; MAX ending the session is AuthExpired logged_out")
+				}
 			}
 			var exists bool
-			if err := s.db.Get(&exists, "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", userID); err != nil || exists {
-				t.Fatalf("user row exists = %v (%v), want deleted", exists, err)
+			if err := s.db.Get(&exists, "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", userID); err != nil || !exists {
+				t.Fatalf("user row exists = %v (%v), want it kept", exists, err)
+			}
+			if token := storedAuthToken(t, s, userID); token != "" {
+				t.Fatalf("the stored login survived LoggedOut: %q", token)
+			}
+			if _, found := userinfocache.Get(tokenOf(userID)); !found {
+				t.Fatalf("the user's token left the cache: it must keep working for the new QR login")
 			}
 		})
 	}
 }
 
-// POST /session/logout logs out of MAX and deletes the user; the reconnect
-// loop must stop instead of logging in again.
-func TestLogoutStopsTheLoop(t *testing.T) {
+// POST /session/logout ends the MAX session and the stored login and keeps
+// the user; the reconnect loop must stop instead of logging in again.
+func TestLogoutStopsTheLoopAndKeepsTheUser(t *testing.T) {
 	f := newFakeMAX(t, emptyReply)
 	s := newTestServer(t)
 	userID := t.Name()
@@ -432,5 +440,12 @@ func TestLogoutStopsTheLoop(t *testing.T) {
 	}
 	if n := f.count(maxclient.OpLogin); n != 0 {
 		t.Fatalf("the loop logged in %d times after the logout", n)
+	}
+	if token := storedAuthToken(t, s, userID); token != "" {
+		t.Fatalf("the stored login survived the logout: %q", token)
+	}
+	var exists bool
+	if err := s.db.Get(&exists, "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", userID); err != nil || !exists {
+		t.Fatalf("user row exists = %v (%v), want it kept", exists, err)
 	}
 }

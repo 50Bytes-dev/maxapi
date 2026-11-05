@@ -44,7 +44,7 @@ func sendToGlobalWebHook(httpClient *resty.Client, jsonData []byte, token string
 	}
 
 	if *globalWebhook != "" {
-		log.Info().Str("url", *globalWebhook).Msg("Calling global webhook")
+		log.Info().Str("url", redactURL(*globalWebhook)).Msg("Calling global webhook")
 		globalData := map[string]string{
 			"jsonData":     jsonDataStr,
 			"token":        token,
@@ -75,7 +75,7 @@ func sendToUserWebHook(httpClient *resty.Client, webhookurl string, path string,
 		Msg("Data being sent to webhook")
 
 	if webhookurl != "" {
-		log.Info().Str("url", webhookurl).Msg("Calling user webhook")
+		log.Info().Str("url", redactURL(webhookurl)).Msg("Calling user webhook")
 		if path == "" {
 			go callHook(httpClient, webhookurl, data, userID)
 		} else {
@@ -124,21 +124,25 @@ func updateAndGetUserSubscriptions(mycli *MyClient) ([]string, error) {
 	return subscribedEvents, nil
 }
 
-// getUserWebhookUrl returns the webhook URL for a user
-func getUserWebhookUrl(token string) string {
-	webhookurl := ""
-	myuserinfo, found := userinfocache.Get(token)
-	if !found {
-		log.Warn().Msg("Could not call webhook as there is no cached user for the token")
-	} else {
-		webhookurl = myuserinfo.(Values).Get("Webhook")
+// getUserWebhookUrl returns the webhook URL of the user: the cached one,
+// else the stored one. An account event (Paused, Resumed) also goes to users
+// that have no session and so are not cached.
+func getUserWebhookUrl(mycli *MyClient) string {
+	if myuserinfo, found := userinfocache.Get(mycli.token); found {
+		return myuserinfo.(Values).Get("Webhook")
+	}
+	var webhookurl string
+	if mycli.db != nil {
+		if err := mycli.db.Get(&webhookurl, "SELECT webhook FROM users WHERE id=$1", mycli.userID); err != nil {
+			log.Warn().Err(err).Str("userID", mycli.userID).Msg("Could not read the user's webhook")
+		}
 	}
 	return webhookurl
 }
 
 // sendEventWithWebHook sends an event through webhook
 func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path string) {
-	webhookurl := getUserWebhookUrl(mycli.token)
+	webhookurl := getUserWebhookUrl(mycli)
 
 	subscribedEvents, err := updateAndGetUserSubscriptions(mycli)
 	if err != nil {
@@ -167,9 +171,13 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 		return
 	}
 
-	// Taken now, not in the delivery goroutines: AuthExpired, LoggedOut and
+	// Taken now, not in the delivery goroutines: AuthExpired and
 	// ReconnectExhausted go out right before cleanupClient drops the client.
+	// A user without a session (an account event) gets a client of its own.
 	httpClient := clientManager.GetHTTPClient(mycli.userID)
+	if httpClient == nil && mycli.s != nil {
+		httpClient = mycli.s.newWebhookClient(mycli.userID)
+	}
 	sendToUserWebHook(httpClient, webhookurl, path, jsonData, mycli.userID, mycli.token)
 	go sendToGlobalWebHook(httpClient, jsonData, mycli.token, mycli.userID)
 	go sendToGlobalRabbit(jsonData, mycli.token, mycli.userID)
@@ -188,8 +196,26 @@ func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userI
 	return true
 }
 
-// connectOnStartup connects all authenticated users to MAX on server startup
+// startupLoginInterval is the mean time between two logins at startup
+// (MAX_STARTUP_LOGIN_INTERVAL_MS): hundreds of accounts logging in from one
+// address in the same second is the kind of burst MAX limits. Each start is
+// spread by ±50%. Tests set it to 0.
+var startupLoginInterval = time.Duration(envIntDefault("MAX_STARTUP_LOGIN_INTERVAL_MS", 1000)) * time.Millisecond
+
+// startupDelay is when the n-th (0-based) login of the startup begins.
+func startupDelay(n int) time.Duration {
+	if startupLoginInterval <= 0 {
+		return 0
+	}
+	base := time.Duration(n) * startupLoginInterval
+	return base + time.Duration((rand.Float64()-0.5)*float64(startupLoginInterval))
+}
+
+// connectOnStartup connects all authenticated users to MAX on server startup,
+// one after another, startupLoginInterval apart. A user that got a session
+// in the meantime (POST /session/connect) is not logged in again.
 func (s *server) connectOnStartup() {
+	queued := 0
 	// Connect ALL users with auth_token (not just connected=1)
 	rows, err := s.db.Queryx(`SELECT id, name, token, max_user_id, webhook, events, proxy_url, 
 		CASE WHEN s3_enabled THEN 'true' ELSE 'false' END AS s3_enabled, 
@@ -258,10 +284,21 @@ func (s *server) connectOnStartup() {
 		}
 
 		eventstring := strings.Join(subscribedEvents, ",")
-		log.Info().Str("events", eventstring).Int64("maxUserID", safeInt64(maxUserID)).Msg("Attempt to connect")
+		delay := startupDelay(queued)
+		queued++
+		log.Info().Str("events", eventstring).Int64("maxUserID", safeInt64(maxUserID)).Dur("in", delay).Msg("Login at startup queued")
 
-		clientManager.NewKillChannel(txtid)
-		go s.startClient(txtid, *authToken, safeString(deviceID), token, subscribedEvents)
+		go func(userID, authToken, deviceID, token string, subs []string, delay time.Duration) {
+			if delay > 0 {
+				time.Sleep(delay)
+			}
+			if clientManager.GetMaxClient(userID) != nil {
+				log.Info().Str("userID", userID).Msg("The user has a session already; no login at startup")
+				return
+			}
+			clientManager.NewKillChannel(userID)
+			s.startClient(userID, authToken, deviceID, token, subs)
+		}(txtid, *authToken, safeString(deviceID), token, subscribedEvents, delay)
 
 		// Initialize S3 client if configured
 		go func(userID string) {
@@ -324,7 +361,12 @@ func (s *server) ensureHTTPClient(userID string) {
 	if clientManager.GetHTTPClient(userID) != nil {
 		return
 	}
+	clientManager.SetHTTPClient(userID, s.newWebhookClient(userID))
+}
 
+// newWebhookClient builds the HTTP client the user's webhooks go through,
+// with the user's proxy.
+func (s *server) newWebhookClient(userID string) *resty.Client {
 	httpClient := resty.New()
 	httpClient.SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
 	httpClient.SetTimeout(30 * time.Second)
@@ -337,28 +379,61 @@ func (s *server) ensureHTTPClient(userID string) {
 	})
 
 	var proxyURL string
-	if err := s.db.Get(&proxyURL, "SELECT proxy_url FROM users WHERE id=$1", userID); err == nil && proxyURL != "" {
+	if err := s.db.Get(&proxyURL, "SELECT COALESCE(proxy_url, '') FROM users WHERE id=$1", userID); err == nil && proxyURL != "" {
 		httpClient.SetProxy(proxyURL)
 	}
-
-	clientManager.SetHTTPClient(userID, httpClient)
+	return httpClient
 }
 
-// buildSyncPostmap assembles the Sync webhook payload, preserving all raw keys
-// returned by the MAX server while keeping our own "type"/"reconnect"/"maxUserID"
-// fields authoritative.
-func buildSyncPostmap(reconnect bool, maxUserID int64, syncData map[string]interface{}) map[string]interface{} {
-	postmap := map[string]interface{}{
+// buildSyncPostmap assembles the Sync event: the session is logged in. It
+// carries the account and its name and photo, never MAX's login answer: that
+// holds the account's chats with their last messages, which a session event
+// has no business carrying (C10). The chats are GET /chat/list, people GET
+// /user/info, the profile GET /session/status.
+func buildSyncPostmap(reconnect bool, client *maxclient.Client) map[string]interface{} {
+	name, photo := accountProfile(client)
+	return map[string]interface{}{
 		"type":      "Sync",
 		"reconnect": reconnect,
-		"maxUserID": maxUserID,
+		"maxUserID": client.MaxUserID,
+		"name":      name,
+		"photo":     photo,
 	}
-	for key, value := range syncData {
-		if key != "type" && key != "reconnect" && key != "maxUserID" {
-			postmap[key] = value
-		}
+}
+
+// accountProfile is the logged-in account's name and photo.
+func accountProfile(client *maxclient.Client) (name, photo string) {
+	if client == nil || client.Me == nil {
+		return "", ""
 	}
-	return postmap
+	return maxclient.DisplayName(client.Me.Names), client.Me.BaseURL
+}
+
+// storeLogin records a login of userID: connected, the MAX account, and its
+// name and photo for the status without a session.
+func (s *server) storeLogin(userID string, client *maxclient.Client) {
+	name, photo := accountProfile(client)
+	if _, err := s.db.Exec("UPDATE users SET connected=1, max_user_id=$1, max_name=$2, max_photo=$3 WHERE id=$4",
+		client.MaxUserID, name, photo, userID); err != nil {
+		log.Error().Err(err).Msg("Failed to update connected status")
+	}
+}
+
+// Machine reasons of AuthExpired (C9), shared with vkapi. MAX's own text goes
+// to the log only.
+const (
+	ReasonTokenRevoked  = "token_revoked"  // MAX refused the stored login; it is erased, a QR login is needed
+	ReasonPageBlocked   = "page_blocked"   // MAX blocked the account (login.blocked); the login is erased
+	ReasonRefreshFailed = "refresh_failed" // MAX refused logging in again; the login is kept, POST /session/connect tries again
+	ReasonLoggedOut     = "logged_out"     // MAX ended the session; the login is erased, the user stays
+)
+
+// authExpiredReason tells the reason of an auth error that erases the login.
+func authExpiredReason(err error) string {
+	if code, ok := maxclient.ServerErrorCode(err); ok && code == maxclient.CodeLoginBlocked {
+		return ReasonPageBlocked
+	}
+	return ReasonTokenRevoked
 }
 
 // initClient performs the one-shot connect+login and registers a fresh
@@ -401,22 +476,21 @@ func (s *server) initClient(userID, authToken, deviceID, token string, subscript
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to connect to MAX")
 		if maxclient.IsAuthError(err) {
-			log.Warn().Str("userID", userID).Msg("Auth token expired or invalid, clearing auth and notifying")
+			reason := authExpiredReason(err)
+			log.Warn().Err(err).Str("userID", userID).Str("reason", reason).Msg("MAX refused the stored login; erasing it")
 			if _, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID); dbErr != nil {
 				log.Error().Err(dbErr).Msg("Failed to clear auth token")
 			}
 			sendEventWithWebHook(mycli, map[string]interface{}{
 				"type":   "AuthExpired",
-				"reason": err.Error(),
+				"reason": reason,
 			}, "")
 		}
 		cleanupClient(userID)
 		return nil, nil, nil, err
 	}
 
-	if _, err := s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID); err != nil {
-		log.Error().Err(err).Msg("Failed to update connected status")
-	}
+	s.storeLogin(userID, client)
 
 	log.Info().Int64("maxUserID", client.MaxUserID).Msg("Connected to MAX")
 	return client, mycli, syncData, nil
@@ -426,12 +500,12 @@ func (s *server) initClient(userID, authToken, deviceID, token string, subscript
 // auth_token is already available. It runs initClient, fires the initial Sync
 // webhook, then enters the supervised reconnect loop.
 func (s *server) startClient(userID string, authToken string, deviceID string, token string, subscriptions []string) {
-	client, mycli, syncData, err := s.initClient(userID, authToken, deviceID, token, subscriptions)
+	client, mycli, _, err := s.initClient(userID, authToken, deviceID, token, subscriptions)
 	if err != nil {
 		return
 	}
 
-	sendEventWithWebHook(mycli, buildSyncPostmap(false, client.MaxUserID, syncData), "")
+	sendEventWithWebHook(mycli, buildSyncPostmap(false, client), "")
 	s.runClientLoop(userID, authToken, client, mycli)
 }
 
@@ -501,24 +575,31 @@ func loginRefusal(err error) (reason string, refused bool) {
 //     risk signal. The next attempt waits for POST /session/connect, that is
 //     for the owner.
 //
+// login.flood (MAX: too many logins) stops the loop at once, the token
+// kept, as the third refusal does: the web client stops at it too.
+//
 // Either stop marks the user disconnected, closes the client, sends
-// AuthExpired with the reason (the error text, MAX's code, or "login timed
-// out") and drops the user's clients. On anything else, a network failure,
-// the loop retries with backoff.
+// AuthExpired with a machine reason (token_revoked or page_blocked for an
+// auth error, refresh_failed for refusals; MAX's text goes to the log) and
+// drops the user's clients. On anything else, a network failure, the loop
+// retries with backoff.
 func (s *server) stopAfterLoginFailure(userID string, client *maxclient.Client, mycli *MyClient, err error, refusals *int) bool {
 	var reason string
 	if maxclient.IsAuthError(err) {
-		log.Warn().Str("userID", userID).Msg("Auth token expired during reconnect, stopping")
+		reason = authExpiredReason(err)
+		log.Warn().Err(err).Str("userID", userID).Str("reason", reason).Msg("MAX refused the login during reconnect; erasing it")
 		if _, dbErr := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID); dbErr != nil {
 			log.Error().Err(dbErr).Msg("Failed to clear auth token")
 		}
-		reason = err.Error()
 	} else {
 		why, refused := loginRefusal(err)
 		if !refused {
 			return false
 		}
 		*refusals++
+		if code, _ := maxclient.ServerErrorCode(err); code == maxclient.CodeLoginFlood {
+			*refusals = maxLoginRefusals
+		}
 		if *refusals < maxLoginRefusals {
 			log.Warn().Str("userID", userID).Str("reason", why).Int("refusals", *refusals).
 				Msg("MAX refused the reconnect login")
@@ -529,7 +610,7 @@ func (s *server) stopAfterLoginFailure(userID string, client *maxclient.Client, 
 		if _, dbErr := s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID); dbErr != nil {
 			log.Error().Err(dbErr).Msg("Failed to update disconnected status")
 		}
-		reason = why
+		reason = ReasonRefreshFailed
 	}
 
 	client.Close()
@@ -558,6 +639,13 @@ func (s *server) runClientLoop(userID string, authToken string, client *maxclien
 	loginRefusals := 0
 
 	killCh := clientManager.GetKillChannel(userID)
+	if killCh == nil {
+		// Every start installs the kill channel before the loop; none means
+		// the user was stopped (endLogin, a delete) before the loop began.
+		log.Info().Str("userid", userID).Msg("Stopped before the loop began")
+		client.Disconnect()
+		return
+	}
 	for {
 		select {
 		case <-killCh:
@@ -632,7 +720,7 @@ func (s *server) runClientLoop(userID string, authToken string, client *maxclien
 				client.Close()
 
 				// Reconnect using Login (Sync opcode 21 has server-side bugs)
-				syncData, err := client.ConnectAndLogin(authToken, nil)
+				_, err := client.ConnectAndLogin(authToken, nil)
 				if err != nil {
 					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
 					if s.stopAfterLoginFailure(userID, client, mycli, err, &loginRefusals) {
@@ -646,128 +734,10 @@ func (s *server) runClientLoop(userID string, authToken string, client *maxclien
 				reconnectAttempts = 0
 				loginRefusals = 0
 
-				// Update connected status
-				_, err = s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to update connected status")
-				}
-
-				sendEventWithWebHook(mycli, buildSyncPostmap(true, client.MaxUserID, syncData), "")
+				s.storeLogin(userID, client)
+				sendEventWithWebHook(mycli, buildSyncPostmap(true, client), "")
 			} else {
 				// Reset reconnect counter on successful connection
-				reconnectAttempts = 0
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}
-}
-
-// maintainConnection keeps client connected with auto-reconnect
-// Used after manual sync to maintain the connection
-func (s *server) maintainConnection(userID string, authToken string, deviceID string, token string, mycli *MyClient) {
-	client := clientManager.GetMaxClient(userID)
-	if client == nil {
-		return
-	}
-
-	reconnectAttempts := 0
-	maxReconnectAttempts := reconnectLimit()
-	loginRefusals := 0
-
-	killCh := clientManager.GetKillChannel(userID)
-	for {
-		select {
-		case <-killCh:
-			log.Info().Str("userid", userID).Msg("Received kill signal (maintainConnection)")
-			client.Disconnect()
-			cleanupClient(userID)
-			s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
-			return
-		default:
-			// Get current client from manager (might have been replaced). No
-			// client at all is not a replacement: safeDeleteUser sends the
-			// kill signal and then cleans up, and the loop must still get to
-			// the signal and close the client.
-			currentClient := clientManager.GetMaxClient(userID)
-			if currentClient != nil && currentClient != client {
-				// Client was replaced, exit this goroutine
-				log.Info().Str("userid", userID).Msg("Client replaced, exiting maintainConnection")
-				return
-			}
-
-			if !client.IsConnected() {
-				reconnectAttempts++
-
-				if maxReconnectAttempts > 0 && reconnectAttempts > maxReconnectAttempts {
-					log.Error().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Max reconnect attempts reached")
-					postmap := map[string]interface{}{
-						"type":     "ReconnectExhausted",
-						"attempts": reconnectAttempts - 1,
-						"reason":   "max_reconnect_attempts",
-					}
-					sendEventWithWebHook(mycli, postmap, "")
-					cleanupClient(userID)
-					s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
-					return
-				}
-
-				backoff := reconnectBackoff(reconnectAttempts)
-				if reconnectAttempts == 1 || reconnectAttempts%10 == 0 {
-					log.Warn().Str("userid", userID).Int("attempt", reconnectAttempts).Dur("backoff", backoff).Msg("Reconnecting...")
-					postmap := map[string]interface{}{
-						"type":    "Reconnecting",
-						"attempt": reconnectAttempts,
-						"max":     maxReconnectAttempts,
-					}
-					sendEventWithWebHook(mycli, postmap, "")
-				}
-
-				select {
-				case <-killCh:
-					log.Info().Str("userid", userID).Msg("Kill signal during maintainConnection backoff")
-					client.Disconnect()
-					cleanupClient(userID)
-					s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", userID)
-					return
-				case <-time.After(backoff):
-				}
-
-				// Check if client was replaced during the delay
-				currentClient := clientManager.GetMaxClient(userID)
-				if currentClient != nil && currentClient != client {
-					log.Info().Str("userid", userID).Msg("Client replaced during reconnect delay, exiting maintainConnection")
-					return
-				}
-
-				// Close old dead connection before creating new one
-				client.Close()
-
-				syncData, err := client.ConnectAndLogin(authToken, nil)
-				if err != nil {
-					log.Error().Err(err).Int("attempt", reconnectAttempts).Msg("Reconnect failed")
-					if s.stopAfterLoginFailure(userID, client, mycli, err, &loginRefusals) {
-						return
-					}
-					continue
-				}
-
-				log.Info().Str("userid", userID).Int("attempts", reconnectAttempts).Msg("Reconnected")
-				reconnectAttempts = 0
-				loginRefusals = 0
-				s.db.Exec("UPDATE users SET connected=1, max_user_id=$1 WHERE id=$2", client.MaxUserID, userID)
-
-				postmap := map[string]interface{}{
-					"type":      "Sync",
-					"reconnect": true,
-					"maxUserID": client.MaxUserID,
-				}
-				for key, value := range syncData {
-					if key != "type" {
-						postmap[key] = value
-					}
-				}
-				sendEventWithWebHook(mycli, postmap, "")
-			} else {
 				reconnectAttempts = 0
 			}
 			time.Sleep(1 * time.Second)
@@ -783,43 +753,18 @@ func cleanupClient(userID string) {
 	clientManager.DeleteKillChannel(userID)
 }
 
-// safeDeleteUser deletes a user safely, idempotent for repeated calls. It may
-// run on the MaxClient's own receive goroutine (the LoggedOut event), so it
-// never closes the client itself: the kill signal makes the user's loop
-// goroutine do it.
-func (s *server) safeDeleteUser(userID string, sendWebhook bool) {
-	log.Info().Str("userID", userID).Bool("sendWebhook", sendWebhook).Msg("Safe delete user")
-
-	// 1. Check if user exists in DB
-	var exists bool
-	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", userID).Scan(&exists)
-	if err != nil {
-		log.Error().Err(err).Str("userID", userID).Msg("Failed to check user existence")
+// endLogin erases userID's MAX login and stops its session, keeping the
+// gateway user: its token, webhook, subscription, settings and lookups. A
+// new login is a QR login through POST /session/connect. It may run on the
+// MaxClient's own receive goroutine (MAX's LoggedOut push), so it never
+// closes the client itself: the kill signal makes the user's loop goroutine
+// do it.
+func (s *server) endLogin(userID string) {
+	clientManager.SendKill(userID)
+	if _, err := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID); err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to erase the login")
 	}
-	if !exists {
-		log.Info().Str("userID", userID).Msg("User already deleted from DB")
-		// Still stop the loop and cleanup clients just in case
-		clientManager.SendKill(userID)
-		cleanupClient(userID)
-		return
-	}
-
-	// 2. Send webhook if needed (before deleting, while mycli still exists).
-	// sendEventWithWebHook takes the HTTP client before step 4 drops it.
-	if sendWebhook {
-		mycli := clientManager.GetMyClient(userID)
-		if mycli != nil {
-			postmap := map[string]interface{}{"type": "LoggedOut"}
-			sendEventWithWebHook(mycli, postmap, "")
-		}
-	}
-
-	// 3. Delete from DB, stop the loop and forget the user.
-	if err := s.removeUser(userID); err != nil {
-		log.Error().Err(err).Str("userID", userID).Msg("Failed to delete user from DB")
-	} else {
-		log.Info().Str("userID", userID).Msg("User deleted from DB")
-	}
+	cleanupClient(userID)
 }
 
 // removeUser deletes gateway user userID: its row (its phone lookups go with
@@ -871,78 +816,124 @@ func refreshCachedUser(token string, fields map[string]string) {
 	userinfocache.Set(token, Values{m}, cache.NoExpiration)
 }
 
-// handleEvent handles MAX events and sends webhooks
-func (mycli *MyClient) handleEvent(event maxclient.Event) {
-	postmap := make(map[string]interface{})
-	postmap["type"] = event.Type
-	postmap["opcode"] = int(event.Opcode)
-	postmap["event"] = event.Payload
-	path := ""
+// gatewayEvents are the MAX notifications passed on as webhook events.
+var gatewayEvents = map[string]bool{
+	maxclient.EventTypeMessage:        true,
+	maxclient.EventTypeMessageEdit:    true,
+	maxclient.EventTypeMessageDelete:  true,
+	maxclient.EventTypeReadReceipt:    true,
+	maxclient.EventTypeChatUpdate:     true,
+	maxclient.EventTypeTyping:         true,
+	maxclient.EventTypeReactionChange: true,
+	maxclient.EventTypeContactUpdate:  true,
+	maxclient.EventTypePresenceUpdate: true,
+	maxclient.EventTypeDisconnected:   true,
+}
 
-	switch event.Type {
-	case maxclient.EventTypeMessage:
-		mycli.handleMessageEvent(event, postmap)
-	case maxclient.EventTypeMessageEdit:
-		postmap["type"] = "MessageEdit"
-	case maxclient.EventTypeMessageDelete:
-		postmap["type"] = "MessageDelete"
-	case maxclient.EventTypeReadReceipt:
-		postmap["type"] = "ReadReceipt"
-	case maxclient.EventTypeChatUpdate:
-		postmap["type"] = "ChatUpdate"
-	case maxclient.EventTypeTyping:
-		postmap["type"] = "Typing"
-	case maxclient.EventTypeReactionChange:
-		postmap["type"] = "ReactionChange"
-	case maxclient.EventTypeContactUpdate:
-		postmap["type"] = "ContactUpdate"
-	case maxclient.EventTypePresenceUpdate:
-		postmap["type"] = "PresenceUpdate"
-	case maxclient.EventTypeDisconnected:
-		postmap["type"] = "Disconnected"
-		log.Info().Str("userID", mycli.userID).Msg("Received disconnect notification")
-	case "LoggedOut":
-		log.Info().Str("userID", mycli.userID).Msg("Received LoggedOut event from MAX")
-		mycli.s.safeDeleteUser(mycli.userID, true)
-		return // Don't continue processing
-	default:
+// subscribedTo reports whether the user is subscribed to eventType or All.
+func (mycli *MyClient) subscribedTo(eventType string) bool {
+	subs, err := updateAndGetUserSubscriptions(mycli)
+	if err != nil {
+		return false
+	}
+	return Find(subs, eventType) || Find(subs, "All")
+}
+
+// handleEvent passes a MAX notification on as a webhook event. The gateway
+// does only the work the user subscribed to (M11): an event the user is not
+// subscribed to is dropped before it is parsed, and the media of a message
+// is only fetched for a Message subscriber.
+func (mycli *MyClient) handleEvent(event maxclient.Event) {
+	if event.Type == "LoggedOut" {
+		// MAX ended the session (from the MAX app, or MAX itself): the login
+		// is erased, the user stays, and the owner logs in by QR again (C9).
+		log.Info().Str("userID", mycli.userID).Msg("MAX ended the session; erasing the login")
+		sendEventWithWebHook(mycli, map[string]interface{}{"type": "AuthExpired", "reason": ReasonLoggedOut}, "")
+		mycli.s.endLogin(mycli.userID)
+		return
+	}
+	if !gatewayEvents[event.Type] {
 		log.Debug().Str("type", event.Type).Msg("Unhandled event type")
 		return
 	}
+	if event.Type == maxclient.EventTypeDisconnected {
+		log.Info().Str("userID", mycli.userID).Msg("Received disconnect notification")
+	}
+	subscribed := mycli.subscribedTo(event.Type)
 
-	sendEventWithWebHook(mycli, postmap, path)
+	postmap := map[string]interface{}{
+		"type":   event.Type,
+		"opcode": int(event.Opcode),
+		"event":  event.Payload,
+	}
+	switch event.Type {
+	case maxclient.EventTypeMessage:
+		mycli.handleMessageEvent(event, postmap, subscribed)
+	case maxclient.EventTypeChatUpdate:
+		postmap["event"] = withoutLastMessage(event.Payload)
+	}
+	if !subscribed {
+		return
+	}
+	sendEventWithWebHook(mycli, postmap, "")
 }
 
-// handleMessageEvent handles incoming message events
-func (mycli *MyClient) handleMessageEvent(event maxclient.Event, postmap map[string]interface{}) {
+// withoutLastMessage returns a copy of a ChatUpdate payload without the
+// chat's lastMessage: a chat event carries no message's text (C10); Message
+// does.
+func withoutLastMessage(payload map[string]interface{}) map[string]interface{} {
+	chat, ok := payload["chat"].(map[string]interface{})
+	if !ok {
+		return payload
+	}
+	if _, has := chat["lastMessage"]; !has {
+		return payload
+	}
+	out := make(map[string]interface{}, len(payload))
+	for k, v := range payload {
+		out[k] = v
+	}
+	c := make(map[string]interface{}, len(chat))
+	for k, v := range chat {
+		if k != "lastMessage" {
+			c[k] = v
+		}
+	}
+	out["chat"] = c
+	return out
+}
+
+// handleMessageEvent handles an incoming message: its media for a Message
+// subscriber, its text for the user's message history when that is on.
+// Nothing of the message goes to the log but its ids.
+func (mycli *MyClient) handleMessageEvent(event maxclient.Event, postmap map[string]interface{}, subscribed bool) {
+	var historyLimit int
+	if userinfo, found := userinfocache.Get(mycli.token); found {
+		historyLimit, _ = strconv.Atoi(userinfo.(Values).Get("History"))
+	}
+	if !subscribed && historyLimit <= 0 {
+		return
+	}
+
 	msgEvent, err := maxclient.ParseMessageEvent(event.Payload)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to parse message event")
 		return
 	}
-
 	if msgEvent.Message == nil {
 		return
 	}
 
 	msg := msgEvent.Message
-	log.Info().
+	log.Debug().
+		Str("userID", mycli.userID).
 		Int64("chatId", msg.ChatID).
-		Int64("sender", msg.Sender).
-		Str("text", truncateString(msg.Text, 50)).
+		Str("messageId", msg.ID).
+		Int("attaches", len(msg.Attaches)).
 		Msg("Message received")
 
-	// Process media attachments
-	if len(msg.Attaches) > 0 && !*skipMedia {
+	if subscribed && len(msg.Attaches) > 0 && !*skipMedia {
 		mycli.processAttachments(msg, postmap)
-	}
-
-	// Save to history if enabled
-	var historyLimit int
-	userinfo, found := userinfocache.Get(mycli.token)
-	if found {
-		historyStr := userinfo.(Values).Get("History")
-		historyLimit, _ = strconv.Atoi(historyStr)
 	}
 
 	if historyLimit > 0 && msg.Text != "" {
@@ -974,17 +965,19 @@ func (mycli *MyClient) processAttachments(msg *maxclient.Message, postmap map[st
 		MediaDelivery string `db:"media_delivery"`
 	}
 
+	// The cached user info has the media settings only when the startup
+	// cached it; a user cached by a request has not, and reads them stored.
 	userinfo, found := userinfocache.Get(mycli.token)
-	if !found {
-		err := mycli.db.Get(&s3Config, "SELECT CASE WHEN s3_enabled = 1 THEN 'true' ELSE 'false' END AS s3_enabled, media_delivery FROM users WHERE id = $1", mycli.userID)
+	if found && userinfo.(Values).Get("MediaDelivery") != "" {
+		s3Config.Enabled = userinfo.(Values).Get("S3Enabled")
+		s3Config.MediaDelivery = userinfo.(Values).Get("MediaDelivery")
+	} else {
+		err := mycli.db.Get(&s3Config, "SELECT CASE WHEN s3_enabled THEN 'true' ELSE 'false' END AS s3_enabled, COALESCE(media_delivery, 'base64') AS media_delivery FROM users WHERE id = $1", mycli.userID)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to get S3 config from DB")
 			s3Config.Enabled = "false"
 			s3Config.MediaDelivery = "base64"
 		}
-	} else {
-		s3Config.Enabled = userinfo.(Values).Get("S3Enabled")
-		s3Config.MediaDelivery = userinfo.(Values).Get("MediaDelivery")
 	}
 
 	for _, attach := range msg.Attaches {
@@ -1051,29 +1044,6 @@ func (mycli *MyClient) processAttachments(msg *maxclient.Message, postmap map[st
 	}
 }
 
-// downloadMedia downloads media from URL
-func downloadMedia(url string) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	data := make([]byte, 0)
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			data = append(data, buf[:n]...)
-		}
-		if err != nil {
-			break
-		}
-	}
-	return data, nil
-}
-
 // fileToBase64 converts a file to base64
 func fileToBase64(filepath string) (string, string, error) {
 	data, err := os.ReadFile(filepath)
@@ -1097,11 +1067,4 @@ func safeString(p *string) string {
 		return ""
 	}
 	return *p
-}
-
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }

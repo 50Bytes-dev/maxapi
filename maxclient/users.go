@@ -3,6 +3,7 @@ package maxclient
 import (
 	"encoding/json"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -13,8 +14,24 @@ func ValidatePhone(phone string) bool {
 	return phoneRegex.MatchString(phone)
 }
 
+// MaskPhone hides the middle of a phone number for the log, keeping its
+// first 4 and last 2 digits: +7900*****67.
+func MaskPhone(phone string) string {
+	r := []rune(phone)
+	if len(r) <= 6 {
+		return strings.Repeat("*", len(r))
+	}
+	return string(r[:4]) + strings.Repeat("*", len(r)-6) + string(r[len(r)-2:])
+}
+
 // GetUsers gets information about users by IDs
 func (c *Client) GetUsers(userIDs []int64) ([]User, error) {
+	return c.GetUsersWithin(userIDs, DefaultTimeout)
+}
+
+// GetUsersWithin is GetUsers (CONTACT_INFO, opcode 32) with a custom wait for
+// MAX's answer. Users already in the client's memory make no request.
+func (c *Client) GetUsersWithin(userIDs []int64, timeout time.Duration) ([]User, error) {
 	// First check cache
 	var cachedUsers []User
 	var missingIDs []int64
@@ -38,29 +55,23 @@ func (c *Client) GetUsers(userIDs []int64) ([]User, error) {
 		"contactIds": missingIDs,
 	}
 
-	c.Logger.Info().Ints64("userIds", missingIDs).Msg("Fetching users")
+	c.Logger.Info().Int("count", len(missingIDs)).Msg("Fetching users")
 
-	resp, err := c.sendAndWait(OpContactInfo, payload)
+	resp, err := c.sendAndWaitWithTimeout(OpContactInfo, payload, timeout)
 	if err != nil {
 		return cachedUsers, err
 	}
 
-	var fetchedUsers []User
-
-	if contactsRaw, ok := resp.Payload["contacts"].([]interface{}); ok {
-		for _, contactRaw := range contactsRaw {
-			contactMap, ok := contactRaw.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			contactBytes, _ := json.Marshal(contactMap)
-			var user User
-			if err := json.Unmarshal(contactBytes, &user); err == nil {
-				fetchedUsers = append(fetchedUsers, user)
-				c.cacheUser(&user)
-			}
-		}
+	var body struct {
+		Contacts []User `json:"contacts"`
+	}
+	if err := resp.decodePayload(&body); err != nil {
+		return cachedUsers, ErrInvalidResponse
+	}
+	fetchedUsers := body.Contacts
+	for i := range fetchedUsers {
+		user := fetchedUsers[i]
+		c.cacheUser(&user)
 	}
 
 	// Combine cached and fetched users in original order
@@ -117,7 +128,7 @@ func (c *Client) SearchByPhoneWithTimeout(phone string, timeout time.Duration) (
 		"phone": phone,
 	}
 
-	c.Logger.Info().Str("phone", phone).Msg("Searching user by phone")
+	c.Logger.Info().Str("phone", MaskPhone(phone)).Msg("Searching user by phone")
 
 	resp, err := c.sendAndWaitWithTimeout(OpContactInfoByPhone, payload, timeout)
 	if err != nil {

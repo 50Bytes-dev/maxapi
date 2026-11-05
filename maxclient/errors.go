@@ -45,6 +45,9 @@ var (
 	ErrChatNotFound    = NewError("chat_not_found", "Chat not found", "Chat Error")
 	ErrUserNotFound    = NewError("user_not_found", "User not found", "User Error")
 	ErrMessageNotFound = NewError("message_not_found", "Message not found", "Message Error")
+	// ErrFrameTooLarge is a request longer than one WebSocket frame of the
+	// client (wsWriteBufferSize): it was not sent.
+	ErrFrameTooLarge = NewError("frame_too_large", "The request is too long to send", "Request Error")
 )
 
 // ServerCodeNotFound is the code MAX answers a lookup that found nothing with,
@@ -54,12 +57,23 @@ var (
 // match it: compare ServerErrorCode instead.
 const ServerCodeNotFound = "not.found"
 
+// Codes MAX refuses a LOGIN (opcode 19) with that the web client stops at:
+// it drops the login, sends LOGOUT and does not try again.
+const (
+	CodeLoginToken   = "login.token"    // the token is dead
+	CodeLoginBlocked = "login.blocked"  // the account is blocked
+	CodeLoginFlood   = "login.flood"    // too many logins
+	CodeUserNotFound = "user.not.found" // the account no longer exists
+)
+
 // Auth error codes that indicate token is expired/invalid
 var authErrorCodes = map[string]bool{
-	"login.token":   true, // FAIL_LOGIN_TOKEN
-	"login.expired": true, // Token expired
-	"auth.invalid":  true, // Invalid auth
-	"auth.expired":  true, // Auth expired
+	CodeLoginToken:   true, // FAIL_LOGIN_TOKEN
+	"login.expired":  true, // Token expired
+	"auth.invalid":   true, // Invalid auth
+	"auth.expired":   true, // Auth expired
+	CodeLoginBlocked: true, // the account is blocked: the token is no use
+	CodeUserNotFound: true, // the account is gone: the token is no use
 }
 
 // ParseError parses an error from response payload

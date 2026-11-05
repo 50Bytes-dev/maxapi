@@ -30,6 +30,7 @@ type server struct {
 	exPath    string
 	startTime time.Time
 	pauses    *pauseRegistry
+	outcomes  *outcomeChecks
 }
 
 // Global variables
@@ -49,23 +50,22 @@ var (
 	webhookRetryCount        = flag.Int("webhookretrycount", 5, "Maximum number of webhook delivery attempts")
 	webhookRetryDelaySeconds = flag.Int("webhookretrydelay", 30, "Base delay (seconds) between webhook retry attempts")
 
-	rabbitRetryCount   = flag.Int("rabbitretrycount", 10, "Maximum RabbitMQ reconnect attempts")
-	rabbitRetryDelay   = flag.Int("rabbitretrydelay", 5, "Base delay (seconds) between RabbitMQ reconnect attempts")
+	rabbitRetryCount = flag.Int("rabbitretrycount", 10, "Maximum RabbitMQ reconnect attempts")
+	rabbitRetryDelay = flag.Int("rabbitretrydelay", 5, "Base delay (seconds) between RabbitMQ reconnect attempts")
 
-	connectRetryDelay   = flag.Int("maxconnectdelay", defaultConnectRetryDelay, "Base delay (seconds) between MAX reconnect attempts")
-	connectRetryCap     = flag.Int("maxconnectcap", defaultConnectRetryCap, "Maximum backoff (seconds) between MAX reconnect attempts")
-	connectMaxRetries   = flag.Int("maxconnectretries", defaultConnectMaxRetries, "Maximum MAX reconnect attempts (0 = infinite)")
+	connectRetryDelay = flag.Int("maxconnectdelay", defaultConnectRetryDelay, "Base delay (seconds) between MAX reconnect attempts")
+	connectRetryCap   = flag.Int("maxconnectcap", defaultConnectRetryCap, "Maximum backoff (seconds) between MAX reconnect attempts")
+	connectMaxRetries = flag.Int("maxconnectretries", defaultConnectMaxRetries, "Maximum MAX reconnect attempts (0 = infinite)")
 
 	userConcurrencyLimit = flag.Int("userconcurrency", 4, "Maximum concurrent heavy ops per user (media, webhook)")
 
 	clientManager        = NewClientManager()
 	userinfocache        = cache.New(5*time.Minute, 10*time.Minute)
 	lastMessageCache     = cache.New(24*time.Hour, 24*time.Hour)
-	globalHTTPClient     *http.Client
 	userSemaphoreManager *UserSemaphoreManager
 )
 
-const version = "1.5.1"
+const version = "2.0.0"
 
 func init() {
 	err := godotenv.Load()
@@ -112,7 +112,6 @@ func init() {
 		*userConcurrencyLimit = v
 	}
 
-	globalHTTPClient = newSafeHTTPClient(60 * time.Second)
 	userSemaphoreManager = NewUserSemaphoreManager(*userConcurrencyLimit)
 
 	if *versionFlag {
@@ -234,6 +233,7 @@ func main() {
 		exPath:    exPath,
 		startTime: time.Now(),
 		pauses:    newPauseRegistry(),
+		outcomes:  newOutcomeChecks(),
 	}
 	s.routes()
 
