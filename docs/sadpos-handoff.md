@@ -21,13 +21,9 @@ in 2.0.0").
 
 As retail's `maxapi-server` in `../retail/web.yml`, with the image above:
 SQLite in a volume on `/app/dbdata` (the logins outlive the container),
-`MAXAPI_ADMIN_TOKEN`, `WEBHOOK_FORMAT=json`, `TZ`, its own port. Two things
-are new:
+`MAXAPI_ADMIN_TOKEN`, `WEBHOOK_FORMAT=json`, `TZ`, its own port. Pass
+`POST /media/photo` the photos' public URLs, the ones the site shows.
 
-- Photos by URL are fetched by the gateway through an SSRF guard: never an
-  internal address. If the photos come from MinIO in the same compose, set
-  `ALLOW_PRIVATE_HOSTS=minio` (the exact host name), or send them as data or
-  a file to `POST /media/photo`.
 - `-skipmedia` is not needed for R4: subscribe the account only to the
   session events below; the gateway drops a notification nobody is
   subscribed to before parsing it, fetches media only for `Message`
