@@ -6,7 +6,9 @@ from the owner's test account, in chats made for it, on the owner's word, and
 only after the session has rested.
 
     GATEWAY=http://localhost:5555 TOKEN=... python3 max_limits_run.py \
-        --chats -1,-2 --photos https://.../1.jpg,https://.../2.jpg --hours 12
+        --chats=-1,-2 --photos https://.../1.jpg,https://.../2.jpg --hours 12
+
+Pass the chats as --chats=...: argparse takes "--chats -1,-2" for a flag.
 """
 
 import argparse
@@ -33,8 +35,8 @@ def call(base, token, method, path, body=None, timeout=30):
             status, raw = resp.status, resp.read()
     except urllib.error.HTTPError as err:
         status, raw = err.code, err.read()
-    except (urllib.error.URLError, TimeoutError) as err:
-        return 0, {"error": str(err)}, time.monotonic() - started
+    except OSError as err:  # URLError, a timeout, a connection reset
+        return 0, {"error": f"{type(err).__name__}: {err}"}, time.monotonic() - started
     try:
         payload = json.loads(raw or b"{}")
     except ValueError:
@@ -71,7 +73,7 @@ def main():
         time.sleep(random.uniform(lo, hi))
 
     deadline = time.time() + args.hours * 3600
-    counts, last_unknown, n = {}, None, 0
+    counts, last_unknown, n, unreached = {}, None, 0, 0
     with open(args.out, "w", newline="") as f:
         out = csv.writer(f)
         out.writerow(["time", "chat", "status", "code", "upstreamCode", "seconds", "photos", "messageId", "ref"])
@@ -86,13 +88,21 @@ def main():
             out.writerow([time.strftime("%Y-%m-%dT%H:%M:%S"), chat, status, code, upstream, f"{secs:.2f}", k,
                           resp.get("messageId", ""), ref])
             f.flush()
-            key = code or "ok"
+            key = code or ("unreached" if status == 0 else "ok")
             counts[key] = counts.get(key, 0) + 1
             n += 1
             if resp.get("paused"):
                 print(f"stopped: the account is paused ({upstream}) after {n} sends")
                 break
-            if status in (0, 503) and code != "lookup_failed":
+            # A call that never reached the gateway is retried: on 2026-11-05
+            # a local connection reset stopped the run after 1042 sends.
+            unreached = unreached + 1 if status == 0 else 0
+            if unreached:
+                print(f"send {n}: {resp.get('error')}", flush=True)
+            if unreached >= 5:
+                print(f"stopped: the gateway did not answer 5 times in a row after {n} sends")
+                break
+            if status == 503 and code != "lookup_failed":
                 print(f"stopped: no session ({resp}) after {n} sends")
                 break
             if upstream and code != "send_failed":
@@ -102,7 +112,7 @@ def main():
                 last_unknown = upstream
             else:
                 last_unknown = None
-            time.sleep(random.uniform(lo, hi))
+            time.sleep(30 if unreached else random.uniform(lo, hi))
     print(json.dumps(counts, ensure_ascii=False))
 
 

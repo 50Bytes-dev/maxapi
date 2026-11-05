@@ -467,8 +467,8 @@ works it out from the chat, and the gateway follows its rules (its
 | A dialog whose person's MAX account is blocked (`accountStatus` 1) or deleted (2) | false | `user_blocked`, `user_removed` |
 | Anything else | true | |
 
-The live check of these rules (a chat where only admins write, a channel
-without rights) is pending, see [below](#what-max-does-and-what-is-not-verified-yet).
+The live check of these rules in a chat where only admins write and in a
+channel without rights was not made, see [below](#what-max-does-and-what-is-not-verified-yet).
 A send to a chat the account may not write in answers `403`
 `address_refused`.
 
@@ -504,9 +504,11 @@ Content-Type: application/json
   base64 makes data a third larger, so send large photos by URL or as a file.
 - The photo must be a JPEG, PNG, GIF or WebP image; `width` and `height` are
   read from its header.
-- How long MAX keeps an `attachment`, and whether it works in other chats and
-  a day later, is to be checked live. Until then: a send that MAX refuses for
-  an attachment answers `422 attachment_rejected`; upload the photo again.
+- An `attachment` works in other chats of the account: live on 2026-11-05 in
+  a group chat and a channel, at once and 48 minutes after the upload. How
+  long MAX keeps it is not known (a day later is not checked): a send that
+  MAX refuses for an attachment answers `422 attachment_rejected`; upload the
+  photo again.
 - The pause applies (`409 page_paused`, no MAX call), and a stop signal on
   opcode 80 pauses the account. A size limit of MAX's (`file.size.limit` and
   the like) is no stop signal.
@@ -560,7 +562,9 @@ MAX), send. Everything before the lookup makes no MAX call.
 
 The gateway does not pace sends: each send goes to MAX at once, and sends of
 one account may run at the same time. How fast an account sends is the job of
-the project that uses the gateway (owner's decision of 2026-11-05).
+the project that uses the gateway (owner's decision of 2026-11-05). The pace
+measured live: one post every 3–5 s, see
+[What MAX does](#what-max-does-and-what-is-not-verified-yet).
 
 ### Phone lookup cache
 
@@ -601,8 +605,9 @@ subscribed to `MessageOutcome` (or `All`):
    none is it. The checks live in memory: a restart drops them.
 
 MAX keeps one message per cid: live on 2026-11-05 a send repeated with the
-same `ref` a minute later answered the first message's `messageId`, and no
-second message appeared. A repeat hours later is not checked yet, so after a
+same `ref` a minute later, and 44 minutes later, answered the first message's
+`messageId`, and no second message appeared. A repeat hours later is not
+checked, so after a
 `send_failed` still wait for `MessageOutcome` before you resend, or resend
 with the same `ref` within minutes.
 
@@ -654,8 +659,9 @@ Content-Type: application/json
   codes), `too_old` (a code with `time`, `old`, `expired` or `late`),
   `forbidden` (a code with `denied`, `forbidden`, `access`, `permission` or
   `rights`). Ask again for single ids to tell them apart.
-- How long after a send MAX deletes for everyone is to be checked live (MAX's
-  `edit-timeout` of 7 days is for editing).
+- How long after a send MAX deletes for everyone is not known: live on
+  2026-11-05 it deleted at once and 44 minutes after the send; a day and a
+  week later are not checked (MAX's `edit-timeout` of 7 days is for editing).
 - The pause applies as to a send (`422 send_rejected` with `paused`, no MAX
   call), and a stop signal pauses the account.
 - `forMe` of 1.5.1 is gone: a delete is for everyone.
@@ -1062,20 +1068,29 @@ account (`docs/research/max-live-checks-2026-11.md`, results in its section 5):
   `{"photos": {"<photoId>": {"token"}}}`; a message attaches
   `{"_type": "PHOTO", "photoToken"}`. **Live:** 12 photos go in one message,
   13 are refused (`errors.send-message.attachment.max-size-reached`); an
-  `attachment` goes to another chat of the account right away.
+  `attachment` goes to another chat of the account right away and 48 minutes
+  later.
 - Send: opcode 64 with `notify: true`, as the web client always sends.
   **Live:** a channel post with `notify: false` is refused
   (`errors.send-message.channel-notify`); a group chat's negative id works.
-- MAX keeps one message per cid. **Live:** a repeat a minute later answers
-  the first message's id.
+- MAX keeps one message per cid. **Live:** a repeat a minute later, and
+  44 minutes later, answers the first message's id.
 - MAX closes the WebSocket on a request split into continuation frames, so
   the gateway writes each request as one frame (up to 64 KiB). **Live:** it
   also closes it on a text of 10000 characters (20 KB), while 4000 UTF-16
   units (12 KB of CJK) go through; MAX took 4001 units too, the gateway keeps
   the web client's 4000.
 - Delete: opcode 66 `{chatId, messageIds, forMe}` answers `{messageIds}`, the
-  ones deleted. **Live:** at once it deletes; an id MAX does not know comes
-  back as `not_found`.
+  ones deleted. **Live:** at once and 44 minutes later it deletes; an id MAX
+  does not know comes back as `not_found`.
+- Two WEB sessions of one account (two QR logins into two gateways) both
+  stay up and both send. **Live:** watched for 11.5 hours while one of them
+  sent 3896 posts.
+- Sending pace. **Live:** one account sent 3896 posts with 1–5 photos each, one
+  every 3–5 s to a group chat and a channel in turn (~845 an hour), 3 h 15 min
+  on end and 4 h 37 min over the day: every one went through, with no pause,
+  no refusal and no `MessageOutcome`. A send takes ~0.1 s to a group chat and
+  ~0.4 s to a channel.
 - The web client stops logging in on `login.token`, `login.blocked`,
   `login.flood` and `user.not.found`.
 - The write rules of [Who may write where](#who-may-write-where). **Live:**
@@ -1084,9 +1099,9 @@ account (`docs/research/max-live-checks-2026-11.md`, results in its section 5):
 - `max-msg-length` 4000, `chats-page-size` 50, `edit-timeout` 7 days; MAX
   sends no captcha.
 
-Not verified live yet: paging past the first page (the test account has five
-chats); an `attachment` after an hour and after a day; deleting for everyone
-after 1 h, 25 h and 8 days; a repeated `ref` hours later; the write rules in
-a chat where only admins write and in a channel without the right to post;
-how MAX treats two WEB sessions of one account; MAX's sending limits (R38),
-for the projects that pace their sends.
+Not verified live: paging past the first page (the test account has five
+chats); an `attachment` after a day; deleting for everyone after 25 h and
+8 days; a repeated `ref` hours later; the write rules in a chat where only
+admins write and in a channel without the right to post; a pace faster than
+one send in 3 s, more than two chats, or a burst from a fresh session (the
+ban of 2026-10-27 came after one).

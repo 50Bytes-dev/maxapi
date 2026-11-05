@@ -2,8 +2,9 @@
 > only from the owner's test MAX account, in chats the owner names, on the
 > owner's word. The first run was on 2026-11-05 (account 559563326, QR login
 > into a local gateway; chats "Maxapi group" and "Maxapi channel", both the
-> owner's): results in section 5. The checks that need time (1 h, 25 h,
-> 8 days) and the limits run are still open.
+> owner's): results in section 5. The same day the limits run went 3896 sends
+> without a refusal, and the owner ended the checks; the 25 h and 8 day
+> checks were not made.
 
 # MAX: what the gateway relies on, and the live checks
 
@@ -85,7 +86,7 @@ through the gateway's API:
 ```bash
 GATEWAY=http://localhost:5555 TOKEN=<test account token> \
 python3 docs/research/max_limits_run.py \
-    --chats -70000000000001,-70000000000002,... \
+    --chats=-70000000000001,-70000000000002,... \
     --photos https://cdn.example.com/1.jpg,https://cdn.example.com/2.jpg \
     --hours 12 --pause 3-5 --out max-run.csv
 ```
@@ -118,13 +119,41 @@ fault or a probe, see L9), no pause, no `AuthExpired`.
 | L2 | 2026-11-05 | A text to the group's negative id went through (200, `messageId`) | none |
 | L3 | 2026-11-05 | Opcode 68 found **none** of the account's chats by title ("Maxapi", "Maxapi channel", "group", the contact's name, "Безопасность" all gave `result: []`); "Max" found one message by its text (`section: MESSAGES`). MAX's web client searches titles in its own loaded chats (`G.chats.searchIndex`) and calls 68 only for messages and 60 for public chats | `q` filters each page's rows by title; opcode 68 is no longer used (`chats.go` `titled`) |
 | L4 | 2026-11-05 | 5, 10, 11 and 12 photos in one message went through; 13, 15, 20 and 30 were refused with `errors.send-message.attachment.max-size-reached` (answered as `attachment_rejected`). Each upload ~0.17 s | `maxAttachments` 10 → 12 |
-| L5 | 2026-11-05 | The same 3 `attachment`s sent to the group went to the channel a minute later. After 1 h and 25 h: not checked yet | none |
-| L6 | 2026-11-05 | Deleted at once: `deleted`; an id MAX does not know came back `not_found`. Three messages wait for the 1 h, 25 h and 8 day deletes (ids 117561271381274258, 117561271714459536, 117561272047588832, sent 05:37) | none |
+| L5 | 2026-11-05 | The same 3 `attachment`s sent to the group went to the channel a minute later; tokens uploaded at 05:34 went to the group and the channel again at 06:21 (48 min). After 25 h: not checked | none |
+| L6 | 2026-11-05 | Deleted at once: `deleted`; an id MAX does not know came back `not_found`; deleted 44 min after the send (06:21): `deleted`. Two messages wait for the 25 h and 8 day deletes (ids 117561271714459536, 117561272047588832, sent 05:37) | none |
 | L7 | 2026-11-05 | The account's own group and channel are `canWrite: true`, the service dialog "Безопасность" `restricted` (as the web client's rule). A channel post with `notify: false` was refused with `errors.send-message.channel-notify`; with `notify: true` it went through. A chat where only admins write and a channel without the post right: not checked (none on the account) | `notify` defaults to true, as the web client sends every message |
-| L8 | 2026-11-05 | A send repeated with the same `ref` 65 s later answered the first message's `messageId` (117561273365456076); the history holds one message. Hours apart: not checked yet | API.md: a repeat within minutes is safe |
+| L8 | 2026-11-05 | A send repeated with the same `ref` 65 s later, and again 44 min later (06:22), answered the first message's `messageId` (117561273365456076); the history holds one message. 25 h apart: not checked | API.md: a repeat within minutes is safe |
 | L9 | 2026-11-05 | 4000 Latin letters (4 KB) dropped the WebSocket (close 1006) and the message was not created (`MessageOutcome` `delivered: false` a minute later): gorilla/websocket wrote any request over its 4 KiB buffer as continuation frames, and MAX closes the connection on those. After the fix: 4000 Cyrillic letters, 2000 emoji (4000 UTF-16 units), 4000 CJK (12 KB) went through. A probe build took 4001 units and 2001 emoji too; 10000 Cyrillic letters (20 KB, one frame) dropped the connection again | Write buffer 64 KiB, a longer request refused as `ErrFrameTooLarge` (`maxclient/client.go`); the 4000-unit limit kept (the web client's `max-msg-length`) |
-| L10 | | not checked: needs the owner's word (it may flag the account) | |
-| L11 | | not checked: needs a rested session (a day without sends) | |
+| L10 | 2026-11-05 | The owner logged the same account into a second local gateway by QR at 06:20 (the first session up since 05:25): both sessions stayed connected, both read the chat list, the second one sent to the group at 06:22 (200) while the first one kept its session. Watched every 10 min until 17:53 while the first one sent 3896 posts: 73 of 73 looks found the second session connected and logged in; the first one missed one look (07:42), a local port clash, not MAX. Same machine and IP for both | none |
+| L11 | 2026-11-05 | 3896 posts, every one 200, no `code`, no `upstreamCode`, no `MessageOutcome`, `Paused`, `AuthExpired` or `Reconnecting` (see "Measured" below) | none |
+
+### Measured (L11)
+
+Started 06:24 without the day of rest (owner's word), an hour after the QR
+login (05:25): the group and the channel in turn, a random 3–5 s pause between
+sends, 1–5 photos per post (10 tokens uploaded once at the start of each
+part), `notify` true, a fresh `ref` each.
+
+| Part | Time | Posts | Answers |
+|---|---|---|---|
+| 1 | 06:24–07:38 | 1042 | all 200 |
+| 2 | 14:36–17:51 | 2743 | all 200 |
+| 3 | 17:53–18:01 | 111 | all 200 |
+
+- 3896 posts with 11748 photos, 3896 distinct `messageId`s; 839–847 posts in
+  each full hour (15:00, 16:00), that is ~420 an hour into each chat.
+- Latency: the group median 0.11 s (p95 0.18 s, max 3.15 s), the channel
+  0.41 s (p95 0.51 s, max 3.43 s).
+- The stops between the parts were local: an SSH tunnel on the same Mac took
+  `127.0.0.1:5555`, so the calls reset before they reached the gateway (3
+  rows of status 0, not MAX's). `max_limits_run.py` now retries a call that
+  did not reach the gateway and stops after 5 in a row.
+- The owner ended the run at 18:01 as stable. Both sessions were logged out.
+
+**What the projects may take from it:** one account sending one post every
+3–5 s, to two chats in turn, held for 3 h 15 min on end and 4 h 37 min over the day
+without a sign from MAX. A faster pace, more chats, other accounts, and a
+burst with no pause (the ban of 2026-10-27) were not measured.
 
 Also seen: the pause, set by hand in the local database, let the list,
 history, mark read and `/user/info` through while a send answered `422`
