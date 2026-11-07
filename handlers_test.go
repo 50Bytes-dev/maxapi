@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -118,19 +119,34 @@ type fakeMAX struct {
 
 	mu     sync.Mutex
 	frames []fakeFrame
-	seen   chan int // opcode of every received frame
+	conns  map[*websocket.Conn]bool // the open WebSockets
+	seen   chan int                 // opcode of every received frame
+
+	refuse atomic.Bool // answer new WebSockets 503
 }
 
 func newFakeMAX(t *testing.T, reply func(f fakeFrame) map[string]interface{}) *fakeMAX {
 	t.Helper()
-	f := &fakeMAX{reply: reply, seen: make(chan int, 16)}
+	f := &fakeMAX{reply: reply, seen: make(chan int, 16), conns: map[*websocket.Conn]bool{}}
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if f.refuse.Load() {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		f.mu.Lock()
+		f.conns[conn] = true
+		f.mu.Unlock()
+		defer func() {
+			f.mu.Lock()
+			delete(f.conns, conn)
+			f.mu.Unlock()
+			conn.Close()
+		}()
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
@@ -171,6 +187,23 @@ func newFakeMAX(t *testing.T, reply func(f fakeFrame) map[string]interface{}) *f
 // uri is the fake server's WebSocket endpoint.
 func (f *fakeMAX) uri() string {
 	return "ws" + strings.TrimPrefix(f.srv.URL, "http")
+}
+
+// open returns how many WebSockets are open.
+func (f *fakeMAX) open() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.conns)
+}
+
+// drop cuts every open WebSocket without a close frame, as a network
+// failure does: the client reads close 1006.
+func (f *fakeMAX) drop() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for conn := range f.conns {
+		conn.UnderlyingConn().Close()
+	}
 }
 
 // total returns how many frames the server received.

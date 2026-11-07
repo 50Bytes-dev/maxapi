@@ -6,22 +6,25 @@ import (
 
 // EventType constants for webhook events
 const (
-	EventTypeMessage        = "Message"
-	EventTypeMessageEdit    = "MessageEdit"
-	EventTypeMessageDelete  = "MessageDelete"
-	EventTypeReadReceipt    = "ReadReceipt"
-	EventTypeConnected      = "Connected"
-	EventTypeDisconnected   = "Disconnected"
-	EventTypeQRGenerated    = "QRGenerated"
-	EventTypeQRScanned      = "QRScanned"
-	EventTypeQRAuthorized   = "QRAuthorized"
-	EventTypeQRExpired      = "QRExpired"
-	EventTypeChatUpdate     = "ChatUpdate"
-	EventTypeTyping         = "Typing"
-	EventTypeReactionChange = "ReactionChange"
-	EventTypeContactUpdate  = "ContactUpdate"
-	EventTypePresenceUpdate = "PresenceUpdate"
-	EventTypeFileReady      = "FileReady"
+	EventTypeMessage       = "Message"
+	EventTypeMessageEdit   = "MessageEdit"
+	EventTypeMessageDelete = "MessageDelete"
+	EventTypeReadReceipt   = "ReadReceipt"
+	EventTypeConnected     = "Connected"
+	EventTypeDisconnected  = "Disconnected"
+	EventTypeQRGenerated   = "QRGenerated"
+	EventTypeQRScanned     = "QRScanned"
+	EventTypeQRAuthorized  = "QRAuthorized"
+	EventTypeQRExpired     = "QRExpired"
+	// EventTypeQRPasswordRequired: MAX asks for the account's cloud
+	// password after the QR scan (POST /session/password).
+	EventTypeQRPasswordRequired = "QRPasswordRequired"
+	EventTypeChatUpdate         = "ChatUpdate"
+	EventTypeTyping             = "Typing"
+	EventTypeReactionChange     = "ReactionChange"
+	EventTypeContactUpdate      = "ContactUpdate"
+	EventTypePresenceUpdate     = "PresenceUpdate"
+	EventTypeFileReady          = "FileReady"
 )
 
 // MessageEvent represents a message event

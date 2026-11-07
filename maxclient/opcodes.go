@@ -12,14 +12,17 @@ const (
 	OpSessionInit Opcode = 6
 
 	// Auth Operations
-	OpProfile       Opcode = 16
-	OpLogin         Opcode = 19
-	OpLogout        Opcode = 20
-	OpSync          Opcode = 21
-	OpConfig        Opcode = 22
-	OpAuthQRStart   Opcode = 288
-	OpAuthQRStatus  Opcode = 289
-	OpAuthQRConfirm Opcode = 291
+	OpProfile Opcode = 16
+	OpLogin   Opcode = 19
+	OpLogout  Opcode = 20
+	OpSync    Opcode = 21
+	OpConfig  Opcode = 22
+	// OpAuthLoginCheckPassword sends the cloud password a login step asked
+	// for (passwordChallenge).
+	OpAuthLoginCheckPassword Opcode = 115
+	OpAuthQRStart            Opcode = 288
+	OpAuthQRStatus           Opcode = 289
+	OpAuthQRConfirm          Opcode = 291
 
 	// Contact Operations
 	OpContactInfo        Opcode = 32

@@ -39,11 +39,12 @@ var supportedEventTypes = []string{
 	"LoggedOut",          // Accepted, never sent: MAX ending the session is AuthExpired logged_out
 
 	// Authentication
-	"QRGenerated",  // QR session created or refreshed, qrLink issued (carries refreshed code too)
-	"QRScanned",    // User scanned QR in mobile app (loginAvailable=true)
-	"QRAuthorized", // Auth token received; server auto-starts MAX session (Sync follows)
-	"QRExpired",    // Terminal — QR refresh budget exhausted or session abandoned
-	"AuthExpired",  // The session stopped and will not reconnect by itself; reason is a machine code
+	"QRGenerated",        // QR session created or refreshed, qrLink issued (carries refreshed code too)
+	"QRScanned",          // User scanned QR in mobile app (loginAvailable=true)
+	"QRPasswordRequired", // MAX asks for the cloud password after the scan; POST /session/password
+	"QRAuthorized",       // Auth token received; server auto-starts MAX session (Sync follows)
+	"QRExpired",          // The QR login ended without a login; reason login_expired, login_failed, login_unsupported
+	"AuthExpired",        // The session stopped and will not reconnect by itself; reason is a machine code
 
 	// Account pause and delivery
 	"Paused",         // The MAX account was paused (a stop signal of MAX)

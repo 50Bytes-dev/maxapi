@@ -1221,9 +1221,20 @@ async function pollQRAndStatus(token, interval) {
         const qrData = await qrRes.json();
         if (qrRes.ok && qrData.success && qrData.qrcode) {
             showQRImage(qrData.qrcode);
+            if (qrData.scanned) {
+                setQRStatus('Scanned: confirming the login...');
+            }
+        } else if (qrRes.status === 409 && qrData.code === 'password_required') {
+            // The account has a cloud password: MAX asks for it after the scan.
+            setQRStatus('MAX asks for the account cloud password');
+            const ended = await askCloudPassword(token);
+            if (ended) {
+                return;
+            }
         } else if (!qrRes.ok) {
-            // 500 "no session" / "already logged in" → stop polling.
-            setQRStatus('QR session ended. Click "Refresh QR".');
+            // 409 already_logged_in, 410 login_expired / login_failed /
+            // login_unsupported → stop polling.
+            setQRStatus('QR login ended (' + (qrData.code || qrRes.status) + '). Click "Refresh QR".');
             return;
         }
     } catch (err) {
@@ -1231,6 +1242,35 @@ async function pollQRAndStatus(token, interval) {
         setQRStatus('Network error while polling');
     }
     qrPollTimer = setTimeout(() => pollQRAndStatus(token, interval), interval);
+}
+
+// askCloudPassword asks for the account's cloud password and sends it to
+// POST /session/password. It returns true when the login has ended.
+async function askCloudPassword(token) {
+    const password = window.prompt('MAX asks for the cloud password of this account:');
+    if (password === null || password === '') {
+        return false; // asked again on the next poll
+    }
+    const res = await fetch(baseUrl + '/session/password', {
+        method: 'POST',
+        headers: { token: token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: password }),
+    });
+    const data = await res.json();
+    if (res.ok && data.accepted) {
+        setQRStatus('Password accepted: connecting...');
+        return false;
+    }
+    if (data.code === 'invalid_password') {
+        showError('MAX refused the password; try again');
+        return false;
+    }
+    if (res.status === 410) {
+        setQRStatus('QR login ended (' + data.code + '). Click "Refresh QR".');
+        return true;
+    }
+    showError('Password not sent: ' + (data.error || res.status));
+    return false;
 }
 
 async function logout(token = '') {

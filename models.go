@@ -187,6 +187,12 @@ type ConnectBody struct {
 	Immediate bool     `json:"immediate" example:"false"`
 }
 
+// PasswordBody is the body of POST /session/password: the MAX account's
+// cloud password, asked for after the QR scan (QRPasswordRequired).
+type PasswordBody struct {
+	Password string `json:"password" example:"secret"`
+}
+
 // ResumeBody is the optional body of POST /session/resume. captchaKey is
 // part of the VK gateway's contract; MAX pauses have no captcha, so it is
 // read and ignored.

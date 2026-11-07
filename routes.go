@@ -79,6 +79,7 @@ func (s *server) routes() {
 	// ========== SESSION ENDPOINTS ==========
 	s.router.Handle("/session/connect", c.Then(s.Connect())).Methods("POST")
 	s.router.Handle("/session/qr", c.Then(s.GetQR())).Methods("GET")
+	s.router.Handle("/session/password", c.Then(s.SubmitPassword())).Methods("POST")
 	s.router.Handle("/session/disconnect", c.Then(s.Disconnect())).Methods("POST")
 	s.router.Handle("/session/logout", c.Then(s.Logout())).Methods("POST")
 	s.router.Handle("/session/status", c.Then(s.GetStatus())).Methods("GET")

@@ -24,6 +24,7 @@ MAX itself are named where they occur. The same API is an OpenAPI 3.1 schema,
 from it. Where this document and the code disagree, the code is right and
 this document gets fixed.
 
+- [What changed in 3.0.0](#what-changed-in-300)
 - [What changed in 2.0.0](#what-changed-in-200)
 - [Authentication](#authentication)
 - [Codes and errors](#codes-and-errors)
@@ -39,6 +40,42 @@ this document gets fixed.
 - [Webhook events](#webhook-events)
 - [Health](#health)
 - [What MAX does, and what is not verified yet](#what-max-does-and-what-is-not-verified-yet)
+
+---
+
+## What changed in 3.0.0
+
+3.0.0 fixes the QR login of 2.0.0. In 12 hours of production on 2026-11-07
+(Sadpos), 90 of 97 confirmations failed with `no_login_token`; a deleted or
+cancelled login left its WebSocket to MAX open and pinging (~20 in 5 hours);
+a WebSocket dropped during the login was polled on until the QR ran out; and
+`GET /session/qr` answered `500` for ordinary states. The failed
+confirmations were accounts with a **cloud password**: MAX answers the scan
+with an empty `tokenAttrs` and a `passwordChallenge`, and wants the password
+(opcode 115) before it hands out the login
+(`docs/research/max-qr-login-2026-11-07.md`; confirmed live on 2026-11-07,
+the same answer as in production). The Python SDK goes to
+`maxapi-python` 6.0.0 (schema `info.version` 6.0.0).
+
+| What | 2.0.0 | 3.0.0 | How to move |
+|---|---|---|---|
+| An account with a cloud password | the login failed after the scan: `QRExpired` with `reason` "Auth Error: No LOGIN token in response (no_login_token)" | `QRPasswordRequired` (`hint`, `email`) after the scan; [`POST /session/password`](#send-the-cloud-password) `{"password"}`; `QRAuthorized` and `Sync` follow | Subscribe to `QRPasswordRequired`, show a password field on it (or on `GET /session/qr` `409 password_required`), send the password. Branch on `422 invalid_password` (ask again) and `410` (the login ended) |
+| `GET /session/qr` errors | `500` "no session", `500` "already logged in", no `code` | `409 password_required`, `409 already_logged_in`, `410 login_expired`, `410 login_failed`, `410 login_unsupported` (vkapi's names where they exist) | Branch on `code`. `already_logged_in`: read `GET /session/status`. `410`: the login ended; connect again if the owner still wants to log in |
+| `GET /session/qr` | `qrcode` | `qrcode` and `scanned` | — |
+| `QRExpired` | `reason` only when MAX refused the confirmation, as an error text | `reason` always: `login_expired`, `login_failed` or `login_unsupported` with `step`; not sent when a connect, disconnect, logout or delete stopped the login | Branch on `reason` |
+| A QR login whose WebSocket drops | polled on the dead socket until the QR ran out, then `QRExpired` | connects again (from 1 s, doubling, at most 5 times per login) and shows a new QR (`QRGenerated`); out of attempts, `QRExpired` `login_failed` | Show the QR of the latest `QRGenerated` |
+| `POST /session/connect` without a login, when MAX cannot be reached or refuses a QR | `500` with the error text | `503 not_connected` or `503 login_unavailable`; no login runs | Connect again later |
+| `POST /session/connect` after MAX ended the session (`AuthExpired` `logged_out`) or refused the stored login | `500` "DB error: … converting NULL to string": the erased login could not be read, and the user could not log in again | a QR login, as for a new user | Nothing; connect again on `AuthExpired` |
+| `POST /session/connect` with a login while a QR login brings the session up | started a second session beside it | `200` "Connecting to MAX after the QR login"; `Sync` follows | — |
+| `POST /session/disconnect` during a QR login | left the login's WebSocket open and polling: it closed only a socket that was not connected | stops the login and waits for it; no `QRExpired` | — |
+| `DELETE /admin/users/{id}`, `POST /session/logout` during a QR login | the login's WebSocket and pings lived on until a restart | stop it; once the call answers, nothing of the user (a ping, a poll, a reconnect) reaches MAX | — |
+| `GET /session/status` `connected` during a QR login | `true`: the QR WebSocket counted | `false`: a login is not a session | Wait for `Sync`, or read `loggedIn` |
+| The device MAX sees | SESSION_INIT with `deviceType`, `locale` and `appVersion` 26.4.3 only; a truncated User-Agent in the handshake | the full description MAX's web client sends (Chrome on macOS, `appVersion` 26.8.4, the same User-Agent in the handshake) | Nothing: stored logins keep their token and device id |
+| Answers of MAX | matched to requests by `seq` alone: a push of MAX carrying the `seq` of a waiting request was taken for its answer | matched by `cmd`, `seq` and opcode, as MAX's clients do | — |
+
+What Sadpos changes: subscribe to `QRPasswordRequired`, add the password
+step to its login screen, and read the new codes of `GET /session/qr` and
+`QRExpired.reason` instead of `500` and error texts.
 
 ---
 
@@ -158,9 +195,25 @@ send or a delete answers `422 send_rejected`, every other call that acts in
 MAX `409 page_paused`; a call that only reads goes on. vkapi answers
 `page_paused` with `409` too.
 
-Calls that never reach MAX keep their pre-2.0 errors without `code`: the
-session calls (`connect`, `qr`, `disconnect`, `logout`, `status`), the
-webhook URL calls, and the admin calls other than those listed.
+The QR login has codes of its own (3.0.0), the same names as vkapi's where
+they exist:
+
+| HTTP | `code` | Where | Meaning |
+|---|---|---|---|
+| `503` | `login_unavailable` | `POST /session/connect` | MAX refused to issue a QR; no login runs |
+| `503` | `not_connected` | `POST /session/connect`, `POST /session/password` | MAX could not be reached, or did not answer the password in time |
+| `409` | `password_required` | `GET /session/qr` | MAX asks for the account's cloud password; send it with `POST /session/password` |
+| `409` | `password_not_required` | `POST /session/password` | A login runs, but MAX has not asked for a password |
+| `409` | `already_logged_in` | `GET /session/qr`, `POST /session/password` | No login runs and a MAX login is stored |
+| `422` | `invalid_password` | `POST /session/password` | MAX refused the password; send it again |
+| `410` | `login_expired` | `GET /session/qr`, `POST /session/password` | MAX expired the QR after 10 new ones; the password was not entered in 10 minutes, MAX refused it 5 times or ended the password step; or no login was started |
+| `410` | `login_failed` | the same | MAX refused the login or did not answer it for 5 minutes; the connection dropped and could not be made again; or the token could not be stored |
+| `410` | `login_unsupported` | the same | MAX asked for a step the gateway does not support (`QRExpired` names it in `step`) |
+
+Other calls that never reach MAX keep their pre-2.0 errors without `code`:
+`POST /session/connect` with a stored login, `disconnect`, `logout`,
+`status`, the webhook URL calls, and the admin calls other than those
+listed.
 
 ---
 
@@ -184,6 +237,7 @@ database calls of at most 200 ms each):
 | `POST /chat/downloaddocument`, `/downloadvideo` | ~90 s | address ≤ 30 s, fetch ≤ 60 s |
 | `POST /chat/downloadimage`, `/downloadaudio` | ~60 s | fetch ≤ 60 s |
 | `POST /session/connect` | ~5 s (`immediate: false`), at once otherwise | the login runs in the background; a QR login asks MAX for a QR first (≤ 30 s) |
+| `POST /session/password` | ≤ 35 s | MAX's answer to the password ≤ 30 s |
 | `GET /session/status`, `GET /session/qr`, `POST /session/resume`, `POST /session/disconnect`, `POST /session/logout`, webhook, admin | ~1 s | the database |
 | `GET /health` | ~1 s | a database ping |
 
@@ -191,15 +245,80 @@ database calls of at most 200 ms each):
 
 ## Session endpoints
 
+### Login at a glance
+
+```
+caller                              maxapi                               MAX
+POST /session/connect ────────────▶ SESSION_INIT, QR (288) ─────────────▶
+                      ◀──────────── 200 "Awaiting QR scan"
+                                    webhook QRGenerated (qrCodeBase64, qrLink)
+(optional) GET /session/qr ───────▶ 200 qrcode, scanned
+                                    polls the QR (289)
+   the owner scans the QR           → webhook QRScanned, scanned: true
+                                    QR expired → new QR, QRGenerated again
+                                    confirms the scan (291)
+                                    ├─ the login token → stored
+                                    └─ a cloud password asked →
+                                       webhook QRPasswordRequired (hint, email);
+                                       GET /session/qr: 409 password_required
+POST /session/password {password} ─▶ the password (115) → 200 accepted
+                                    the login token → stored
+                                    session up (LOGIN 19):
+                                    webhooks QRAuthorized (authToken), Sync (maxUserID)
+(optional) GET /session/qr ───────▶ 409 already_logged_in → GET /session/status
+```
+
+- One QR login runs per account; a new connect replaces it. It is not a
+  session: `GET /session/status` reports `connected` false until `Sync`.
+- **The webhooks alone can drive the login screen**: `QRGenerated` shows
+  the QR, `QRScanned` "confirm on the phone", `QRPasswordRequired` the
+  password field, `QRAuthorized` and `Sync` the end, `QRExpired` the reason
+  it ended. Reading `GET /session/qr` is optional.
+- Every phase has its end:
+  - waiting for the scan: MAX expires the QR; the gateway issues a new one
+    (`QRGenerated`) up to 10 times, the next expiry ends the login with
+    `login_expired`;
+  - waiting for the password: 10 minutes, or the fifth password MAX refuses,
+    end it with `login_expired`;
+  - any phase: MAX refusing the login (`login_failed`), not answering the
+    poll for 5 minutes (`login_failed`), or asking for a step the gateway
+    does not support (`login_unsupported`); a new connect,
+    `POST /session/disconnect`, `POST /session/logout`, deleting the account
+    or a gateway restart, which stop it without `QRExpired`.
+- **A dropped connection.** The login connects again with the same device
+  id, from 1 s and doubling, at most 5 times per login, and shows a new QR
+  (`QRGenerated`): the old one belonged to the dead connection. Waiting for
+  the password, it connects again without a new QR and sends the password on
+  the new connection (not verified live: MAX may refuse it there, which ends
+  the login with `login_expired`).
+- **Setting a cloud password ends the session** (live, 2026-11-07): MAX
+  logs every WEB session of the account out (`AuthExpired` `logged_out`).
+  The next QR login asks for the password. Out of attempts, the login ends with
+  `login_failed`.
+- The outcome of an ended login (`login_expired`, `login_failed`,
+  `login_unsupported`) is kept until the next connect, a disconnect, a
+  logout or a restart: `GET /session/qr` and `POST /session/password`
+  answer it with `410`.
+- A stop (connect, disconnect, logout, delete) waits for the login: once the
+  call answers, nothing of the login reaches MAX.
+
 ### Connect
 
 Open a MAX session. Behaviour depends on whether the user already has a stored
 auth token:
 
-- **No auth token** → the gateway starts a QR auth session and responds with
-  `{"success": true, "details": "Awaiting QR scan"}`. Fetch the code via
-  `GET /session/qr` (or the `QRGenerated` webhook), scan it in the MAX app;
-  `QRAuthorized` and `Sync` follow (the gateway connects by itself).
+- **No auth token** → the gateway starts a [QR login](#login-at-a-glance),
+  replacing a running one, and responds with
+  `{"success": true, "details": "Awaiting QR scan"}` once MAX issued the
+  first QR. Fetch the code via `GET /session/qr` (or the `QRGenerated`
+  webhook), scan it in the MAX app; `QRAuthorized` and `Sync` follow (the
+  gateway connects by itself), after `QRPasswordRequired` and
+  `POST /session/password` for an account with a cloud password. Errors:
+  `503 not_connected` (MAX could not be reached), `503 login_unavailable`
+  (MAX refused to issue a QR).
+- **A QR login just got its token** and brings the session up →
+  `{"success": true, "details": "Connecting to MAX after the QR login"}`;
+  `Sync` follows.
 - **Auth token present** → the gateway reconnects with it and responds with
   `{"success": true, "details": "Connected to MAX"}`.
 - **Already connected** → idempotent; subscriptions are still refreshed and the
@@ -223,24 +342,71 @@ session is not up by then.
 
 ### Get QR Code
 
-Returns the QR code of an in-progress QR login. The gateway issues a new one
-when MAX's expires (up to 10 times) and sends `QRGenerated` each time.
+Returns the QR code of the running QR login. No MAX call.
 
 ```http
 GET /session/qr
 ```
 
 ```json
-{ "success": true, "qrcode": "data:image/png;base64,..." }
+{ "success": true, "qrcode": "data:image/png;base64,...", "scanned": false }
 ```
 
-Errors: `500` `"no session"` when no QR login runs, `500` `"already logged in"`
-once a login is stored.
+- `qrcode` is a 256×256 PNG data URI of MAX's login link, the same string
+  the latest `QRGenerated` carried.
+- `scanned` is `true` once the owner has scanned the current QR and the
+  gateway confirms it; a new QR sets it back to `false`.
+
+Errors:
+
+| HTTP | `code` | When |
+|---|---|---|
+| `409` | `password_required` | MAX asks for the account's cloud password (`QRPasswordRequired`). There is no QR any more: send the password with `POST /session/password` |
+| `409` | `already_logged_in` | No login runs and a MAX login is stored: the login just completed, or a stored login was used. Read `GET /session/status` |
+| `410` | `login_expired` | The last login expired (see [Login at a glance](#login-at-a-glance)), or no login was started (none, a disconnect, a restart) |
+| `410` | `login_failed` | The last login failed |
+| `410` | `login_unsupported` | MAX asked the last login for a step the gateway does not support |
+| `401` | | Unknown account token |
+
+### Send the cloud password
+
+An account with a cloud password (two factor authentication in the MAX app)
+is asked for it after the scan: `QRPasswordRequired` goes out (with the
+`hint` the owner set and the masked recovery `email`, when MAX gives them),
+and `GET /session/qr` answers `409 password_required`.
+
+```http
+POST /session/password
+Content-Type: application/json
+
+{ "password": "the cloud password" }
+```
+
+```json
+{ "success": true, "accepted": true }
+```
+
+`200`: MAX took the password and handed out the login: `QRAuthorized` and
+`Sync` follow once the session is up. The password goes to MAX (opcode 115)
+and nowhere else: never stored, never logged. Passwords are checked one at a
+time per login.
+
+| HTTP | `code` | When | Counts as refused |
+|---|---|---|---|
+| `400` | `INVALID_INPUT` | The body is not JSON, or the password is empty or over 256 bytes | no |
+| `410` | `login_expired`, `login_failed`, `login_unsupported` | The login has ended: its outcome, as in `GET /session/qr`. With no login at all: `login_expired` | no |
+| `409` | `already_logged_in` | No login runs and a MAX login is stored | no |
+| `409` | `password_not_required` | A login runs, but MAX has not asked for a password | no |
+| `503` | `not_connected` | MAX did not answer in time. Send the password again | no |
+| `422` | `invalid_password` | MAX refused the password (`upstreamCode`, e.g. `password2fa.wrong`): attempts one to four. Ask the owner again | yes |
+| `410` | `login_expired` | MAX refused the fifth password, or ended the password step (its time is up). `QRExpired` (`login_expired`) goes out | yes |
+| `410` | `login_unsupported` | MAX will not take a password from the gateway (`second.factor.disabled.update.app`). `QRExpired` (`login_unsupported`, `step` `password:<code>`) goes out | — |
+| `401` | | Unknown account token | |
 
 ### Disconnect
 
-Closes the MAX session, or cancels an in-progress QR login. Keeps the stored
-login.
+Closes the MAX session, or stops a running QR login (no `QRExpired`; once the
+call answers, nothing of the login reaches MAX). Keeps the stored login.
 
 ```http
 POST /session/disconnect
@@ -248,8 +414,8 @@ POST /session/disconnect
 
 ### Logout
 
-Ends the MAX session (opcode 20) and **erases the stored login. The gateway
-user stays** with its token, webhook, subscription and lookups; a new
+Stops a running QR login, ends the MAX session (opcode 20) and **erases the
+stored login. The gateway user stays** with its token, webhook, subscription and lookups; a new
 login is a QR login through `POST /session/connect`. Deleting the user is
 `DELETE /admin/users/{id}`. A [pause](#account-pause) of its MAX account
 stays. No webhook is sent.
@@ -279,7 +445,7 @@ GET /session/status
 
 | Field | Present | Meaning |
 |---|---|---|
-| `connected` | always | The MAX WebSocket of this user is up. A paused account keeps its session. |
+| `connected` | always | The MAX session of this user is up. A running QR login is no session: `false` until `Sync`. A paused account keeps its session. |
 | `authenticated` | always | A login is stored. |
 | `loggedIn` | always | `connected && authenticated`. |
 | `maxUserID` | always | The MAX id of the live session's account; `0` without a session. |
@@ -955,9 +1121,11 @@ takes effect at once (the next event goes to the new webhook).
 DELETE /admin/users/{userid}
 ```
 
-Deletes the user with its stored login and phone lookups, stops its loop and
-session (closed, not logged out in MAX), and drops its token from the cache at
-once: the next call with it answers `401`. A pause of its MAX account stays.
+Deletes the user with its stored login and phone lookups, stops its QR
+login, loop and session (closed, not logged out in MAX), and drops its token
+from the cache at once: the next call with it answers `401`. Once the call
+answers, the user's WebSockets to MAX are closed and nothing of it (a ping, a
+QR poll, a reconnect) reaches MAX. A pause of its MAX account stays.
 No webhook is sent. An unknown id answers `200` too.
 
 ---
@@ -980,10 +1148,11 @@ before it is parsed, the media of an incoming message is fetched only for a
 | `Sync` | The session is logged in: a connect with a stored login, after `QRAuthorized`, after a reconnect | `maxUserID`, `reconnect`, `name`, `photo` |
 | `Reconnecting` | The session dropped and is logged into again (first attempt and every 10th) | `attempt`, `max` |
 | `ReconnectExhausted` | `MAX_CONNECT_RETRIES` used up | `attempts`, `reason` (`max_reconnect_attempts`) |
-| `QRGenerated` | A QR login started, or a new QR replaced an expired one | `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt` |
-| `QRScanned` | The QR was scanned | `trackId` |
+| `QRGenerated` | A QR login started, a new QR replaced an expired one, or the login connected to MAX again | `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt` |
+| `QRScanned` | The QR was scanned (once per QR); the gateway confirms it | `trackId` |
+| `QRPasswordRequired` | MAX asks for the account's cloud password after the scan; once per login (3.0.0) | `hint`, `email` (masked by MAX), when MAX gives them. Send the password with `POST /session/password` |
 | `QRAuthorized` | The QR login is done; `Sync` follows | `authToken`: the MAX login (a secret) |
-| `QRExpired` | The QR login ended without a login | `reason` when MAX refused the confirmation |
+| `QRExpired` | The QR login ended without a login; not sent when a connect, disconnect, logout or delete stopped it | `reason`: `login_expired` (10 new QRs used up; the password not entered in 10 minutes, refused 5 times, or its step ended by MAX), `login_failed` (MAX refused or did not answer the login; the connection could not be made again), `login_unsupported` (MAX asked for a step the gateway does not support; `step` names it: MAX's keys, e.g. `REGISTER`, or `password:<code>`) |
 | `AuthExpired` | The session stopped and will not reconnect by itself | `reason`: `token_revoked` (MAX refused the stored login; erased), `page_blocked` (MAX blocked the account; erased), `refresh_failed` (3 refusals or `login.flood`; kept, `POST /session/connect` tries again), `logged_out` (MAX ended the session; erased). The gateway user stays in every case |
 | `Paused` | The MAX account was paused | `maxUserID`, `pauseReason`, `upstreamCode` |
 | `Resumed` | The pause was lifted | `maxUserID` |
@@ -1041,7 +1210,7 @@ GET /health
 ```
 
 ```json
-{ "success": true, "status": "ok", "version": "2.0.0", "uptime_seconds": 12345, "db_ok": true, "rabbitmq_ok": true, "connected_users": 42, "goroutines": 87, "mem_alloc_mb": 67, "timestamp": 1700000000 }
+{ "success": true, "status": "ok", "version": "3.0.0", "uptime_seconds": 12345, "db_ok": true, "rabbitmq_ok": true, "connected_users": 42, "goroutines": 87, "mem_alloc_mb": 67, "timestamp": 1700000000 }
 ```
 
 `503` with `"status": "degraded"` when the database does not answer. MAX is
@@ -1093,13 +1262,32 @@ account (`docs/research/max-live-checks-2026-11.md`, results in its section 5):
   ~0.4 s to a channel.
 - The web client stops logging in on `login.token`, `login.blocked`,
   `login.flood` and `user.not.found`.
+- QR login: 288 issues a QR (`qrLink`, `trackId`, `pollingInterval`,
+  `ttl`, `expiresAt`); 289 `{trackId}` answers `{status: {expiresAt,
+  loginAvailable}}`, `loginAvailable` only once the owner confirmed on the
+  phone; 291 `{trackId}` answers `{tokenAttrs: {LOGIN: {token}}, profile}`,
+  or, for an account with a cloud password, `{tokenAttrs: {}, passwordChallenge:
+  {trackId, config, hint?, email?}}`; 115 `{trackId, password}` answers the
+  `LOGIN` token, or `password2fa.wrong` with the same `trackId` good for
+  another attempt. **Live** (2026-11-07): a QR lives 120 s, then the poll
+  answers `track.not.found`; with a cloud password 291 answers exactly so
+  (`hint` and `email` only when the owner set them); a wrong password
+  answers `password2fa.wrong`, the right one on the same `trackId` the
+  login; MAX lists the session as "WEB, Chrome, macOS".
+- **Live:** setting a cloud password in the MAX app ends every WEB session
+  of the account: MAX pushes opcode 159 (profile) and opcode 20, and the
+  gateway sends `AuthExpired` `logged_out`. The owner logs in again by QR,
+  now with the password.
+- MAX answers a request with `cmd` 1 (3 for an error) and the request's `seq`
+  and opcode; a frame it pushes has `cmd` 0 and a `seq` of its own counter.
 - The write rules of [Who may write where](#who-may-write-where). **Live:**
   a service dialog is `restricted`, the account's own group and channel are
   writable.
 - `max-msg-length` 4000, `chats-page-size` 50, `edit-timeout` 7 days; MAX
   sends no captcha.
 
-Not verified live: paging past the first page (the test account has five
+Not verified live: whether a password challenge survives a new connection;
+paging past the first page (the test account has five
 chats); an `attachment` after a day; deleting for everyone after 25 h and
 8 days; a repeated `ref` hours later; the write rules in a chat where only
 admins write and in a channel without the right to post; a pace faster than

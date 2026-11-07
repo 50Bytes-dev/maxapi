@@ -231,10 +231,18 @@ func (s *server) Respond(w http.ResponseWriter, r *http.Request, statusCode int,
 }
 
 // Update entry in User map
+//
+// It returns a copy: requests and webhook deliveries read the cached map
+// concurrently, so the cached one is never written to.
 func updateUserInfo(values interface{}, field string, value string) interface{} {
-	log.Debug().Str("field", field).Str("value", value).Msg("User info updated")
-	values.(Values).m[field] = value
-	return values
+	log.Debug().Str("field", field).Msg("User info updated")
+	old := values.(Values)
+	m := make(map[string]string, len(old.m)+1)
+	for k, v := range old.m {
+		m[k] = v
+	}
+	m[field] = value
+	return Values{m}
 }
 
 // webhookMaxRetries returns how many total attempts a webhook should make.

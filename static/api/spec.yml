@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MaxAPI
-  version: 5.0.0
+  version: 6.0.0
   description: |-
     maxapi holds logins into MAX Messenger accounts and exposes them over REST:
     the account's chats, sending text and photos (uploaded once, attached by
@@ -15,8 +15,8 @@ info:
     info). The gateway does not pace sends: how fast an account sends is the
     job of the project that uses it.
 
-    This schema describes maxapi 2.0.0. `API.md` in the repository is the full
-    contract, with what changed in 2.0.0 and how to move to it; where the two
+    This schema describes maxapi 3.0.0. `API.md` in the repository is the full
+    contract, with what changed in 3.0.0 and 2.0.0 and how to move to it; where the two
     disagree, the code is right. The codes, pause and chat list follow the
     contract shared with the VK gateway (vkapi).
 
@@ -247,8 +247,11 @@ paths:
       operationId: deleteUser
       summary: Delete an account
       description: |-
-        Stops the account's MAX session and deletes the account with its MAX
-        login and phone lookup cache. Succeeds for an unknown id too. No webhook
+        Stops the account's QR login and MAX session for good and deletes the
+        account with its MAX login and phone lookup cache: once the call
+        returns, the account's WebSockets to MAX are closed and nothing of it
+        (a ping, a poll, a reconnect) reaches MAX. Succeeds for an unknown id
+        too. No webhook
         is sent, and the session is not logged out in MAX (`POST /session/logout`
         does that). A pause of its MAX account stays. The account's token
         answers `401` from then on.
@@ -310,10 +313,18 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         "500":
           description: |-
-            No `code`. A database error; the QR login could not be started (no
-            connection to MAX, MAX refused it); or, with `immediate` false, the
-            session was not up after 5 s ("failed to connect"; the login goes on
-            in the background).
+            No `code`. A database error; or, with `immediate` false, the session
+            was not up after 5 s ("failed to connect"; the login goes on in the
+            background).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: |-
+            The QR login could not start; no login runs. `not_connected`: MAX
+            could not be reached. `login_unavailable`: MAX refused to issue a QR
+            (`upstreamCode`). Connect again later.
           content:
             application/json:
               schema:
@@ -324,27 +335,109 @@ paths:
       summary: Get the QR of the running login
       description: |-
         The QR of the running QR login as a PNG data URL. The gateway issues a
-        new QR when MAX's expires (webhook `QRGenerated`), so poll it every few
-        seconds while it is shown. There is no `scanned` flag: the scan arrives
-        as `QRScanned`, the login as `QRAuthorized` and `Sync`.
+        new QR when MAX's expires (up to 10 times) or after it connected to MAX
+        again (webhook `QRGenerated`); the webhooks alone can drive the login
+        screen. No MAX call.
       tags:
       - session
       security:
       - ApiKeyAuth: []
       responses:
         "200":
-          description: The login waits for a scan
+          description: The login waits for the scan, or confirms it (`scanned` true)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QRResponse'
         "401":
           $ref: '#/components/responses/Unauthorized'
-        "500":
+        "409":
           description: |-
-            No `code`. "no session": neither a QR login nor a session is up.
-            "already logged in": a session is up and a MAX login is stored. Also
-            a database error while reading the account.
+            `password_required`: MAX asks for the account's cloud password
+            (webhook `QRPasswordRequired`); there is no QR any more, send the
+            password with `POST /session/password`. `already_logged_in`: no
+            login runs and a MAX login is stored; read `GET /session/status`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "410":
+          description: |-
+            No login runs: the outcome of the last one, kept until the next
+            connect, a disconnect, a logout or a restart. `login_expired`: MAX
+            expired the QR after 10 new ones, the password was not entered in
+            10 minutes or MAX refused it too often, or no login was started.
+            `login_failed`: MAX refused the login, did not answer it, or could
+            not be reached again after the connection dropped.
+            `login_unsupported`: MAX asked for a step the gateway does not
+            support (`QRExpired` names it in `step`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /session/password:
+    post:
+      operationId: submitPassword
+      summary: Send the account's cloud password
+      description: |-
+        After the scan MAX asks for the cloud password of an account that has
+        one (webhook `QRPasswordRequired`, `GET /session/qr` answers `409
+        password_required`). This passes it to MAX (opcode 115). `200` means
+        MAX took it: `QRAuthorized` and `Sync` follow. A wrong password
+        answers `422 invalid_password` and may be sent again; the fifth
+        refusal ends the login (`410 login_expired`). The password is never
+        stored or logged.
+      tags:
+      - session
+      security:
+      - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordBody'
+      responses:
+        "200":
+          description: MAX took the password; the session is being brought up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResponse'
+        "400":
+          description: '`INVALID_INPUT`: the body is not JSON, or the password is empty or over 256 bytes'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "409":
+          description: |-
+            `password_not_required`: a login runs, but MAX has not asked for a
+            password. `already_logged_in`: no login runs and a MAX login is
+            stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "410":
+          description: |-
+            The login has ended: `login_expired` (also when MAX refused the
+            fifth password or ended the password step), `login_failed`,
+            `login_unsupported`, as in `GET /session/qr`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: '`invalid_password`: MAX refused the password (`upstreamCode`, e.g. `password2fa.wrong`); send it again'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: '`not_connected`: MAX did not answer in time; send the password again'
           content:
             application/json:
               schema:
@@ -354,10 +447,11 @@ paths:
       operationId: disconnect
       summary: Disconnect the account
       description: |-
-        Cancels the running QR login, or closes the MAX session and stops its
-        reconnects. The stored MAX login stays: the next connect reuses it. The
-        session is not logged out in MAX, and no webhook is sent. No body is
-        read.
+        Stops the running QR login (no `QRExpired`; once the call returns,
+        nothing of the login reaches MAX), or closes the MAX session and stops
+        its reconnects. The stored MAX login stays: the next connect reuses it.
+        The session is not logged out in MAX, and no webhook is sent. No body
+        is read.
       tags:
       - session
       security:
@@ -376,9 +470,10 @@ paths:
   /session/logout:
     post:
       operationId: logout
-      summary: Log out of MAX and delete the account
+      summary: Log out of MAX
       description: |-
-        Ends the MAX session (opcode 20) and erases the stored MAX login. The
+        Stops a running QR login, ends the MAX session (opcode 20) and erases
+        the stored MAX login. The
         gateway account stays, with its token, webhook and settings: a new
         login is a QR login through `POST /session/connect`. Deleting the
         account is `DELETE /admin/users/{userid}`. No webhook is sent.
@@ -388,7 +483,7 @@ paths:
       - ApiKeyAuth: []
       responses:
         "200":
-          description: Logged out and deleted (`message` "Logged out")
+          description: Logged out (`message` "Logged out")
           content:
             application/json:
               schema:
@@ -2118,7 +2213,10 @@ components:
             `lookup_failed`, `send_rejected`, `message_rejected`,
             `attachment_rejected`, `send_failed`. Other calls that reach MAX:
             `page_paused`, `upstream_error`, `not_connected`. Media:
-            `invalid_image`, `fetch_failed`, `upload_failed`. Generic:
+            `invalid_image`, `fetch_failed`, `upload_failed`. QR login:
+            `login_unavailable`, `password_required`, `password_not_required`,
+            `already_logged_in`, `invalid_password`, `login_expired`,
+            `login_failed`, `login_unsupported`. Generic:
             `INVALID_INPUT`, `INTERNAL_ERROR`, `NOT_FOUND`. Treat an unknown code
             as a failure of the call.
           example: send_rejected
@@ -2162,6 +2260,7 @@ components:
       - LoggedOut
       - QRGenerated
       - QRScanned
+      - QRPasswordRequired
       - QRAuthorized
       - QRExpired
       - AuthExpired
@@ -2462,6 +2561,7 @@ components:
           - Reconnecting
           - QRGenerated
           - QRScanned
+          - QRPasswordRequired
           - QRExpired
         immediate:
           type: boolean
@@ -2511,8 +2611,34 @@ components:
           example: true
         qrcode:
           type: string
-          description: A 256x256 PNG data URL of MAX's login link; "" between a scan and the login
+          description: A 256x256 PNG data URL of MAX's login link, the same as the latest `QRGenerated`
           example: data:image/png;base64,iVBORw0KGgo...
+        scanned:
+          type: boolean
+          description: The owner scanned the current QR and the gateway confirms the login
+          example: false
+    PasswordBody:
+      type: object
+      required:
+      - password
+      properties:
+        password:
+          type: string
+          description: The MAX account's cloud password, 1 to 256 bytes
+          example: correct horse
+    PasswordResponse:
+      type: object
+      required:
+      - success
+      - accepted
+      properties:
+        success:
+          type: boolean
+          example: true
+        accepted:
+          type: boolean
+          description: MAX took the password; `QRAuthorized` and `Sync` follow
+          example: true
     StatusResponse:
       type: object
       required:
@@ -2528,7 +2654,7 @@ components:
           example: true
         connected:
           type: boolean
-          description: The account's MAX connection is up (the QR login's connection too). A paused account keeps its session.
+          description: The account's MAX session is up. A running QR login is not a session (false). A paused account keeps its session.
         authenticated:
           type: boolean
           description: A MAX login (auth token) is stored
@@ -3386,6 +3512,7 @@ components:
       - $ref: '#/components/schemas/MessageOutcomeEvent'
       - $ref: '#/components/schemas/QRGeneratedEvent'
       - $ref: '#/components/schemas/QRScannedEvent'
+      - $ref: '#/components/schemas/QRPasswordRequiredEvent'
       - $ref: '#/components/schemas/QRAuthorizedEvent'
       - $ref: '#/components/schemas/QRExpiredEvent'
       - $ref: '#/components/schemas/AuthExpiredEvent'
@@ -3410,6 +3537,7 @@ components:
           MessageOutcome: '#/components/schemas/MessageOutcomeEvent'
           QRGenerated: '#/components/schemas/QRGeneratedEvent'
           QRScanned: '#/components/schemas/QRScannedEvent'
+          QRPasswordRequired: '#/components/schemas/QRPasswordRequiredEvent'
           QRAuthorized: '#/components/schemas/QRAuthorizedEvent'
           QRExpired: '#/components/schemas/QRExpiredEvent'
           AuthExpired: '#/components/schemas/AuthExpiredEvent'
@@ -3841,7 +3969,7 @@ components:
           $ref: '#/components/schemas/EventTimestamp'
     QRScannedEvent:
       type: object
-      description: The owner scanned the QR (once per login).
+      description: The owner scanned the QR (once per QR); the gateway confirms the login.
       required: [type, trackId, userID, instanceID, instanceName, eventTimestamp]
       properties:
         type:
@@ -3849,6 +3977,31 @@ components:
           const: QRScanned
         trackId:
           type: string
+        userID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceID:
+          $ref: '#/components/schemas/EventUserID'
+        instanceName:
+          $ref: '#/components/schemas/EventInstanceName'
+        eventTimestamp:
+          $ref: '#/components/schemas/EventTimestamp'
+    QRPasswordRequiredEvent:
+      type: object
+      description: |-
+        After the scan MAX asks for the account's cloud password (two factor
+        authentication); once per login. Ask the owner for it and send it with
+        `POST /session/password` within 10 minutes. No new QR is issued.
+      required: [type, userID, instanceID, instanceName, eventTimestamp]
+      properties:
+        type:
+          type: string
+          const: QRPasswordRequired
+        hint:
+          type: string
+          description: The hint the owner set for the password, when MAX gives one
+        email:
+          type: string
+          description: The recovery email, masked by MAX (`o***@mail.ru`), when MAX gives one
         userID:
           $ref: '#/components/schemas/EventUserID'
         instanceID:
@@ -3880,15 +4033,30 @@ components:
           $ref: '#/components/schemas/EventTimestamp'
     QRExpiredEvent:
       type: object
-      description: The QR login ended without logging in.
-      required: [type, userID, instanceID, instanceName, eventTimestamp]
+      description: |-
+        The QR login ended without logging in. Not sent when a connect, a
+        disconnect, a logout or a delete stopped it.
+      required: [type, reason, userID, instanceID, instanceName, eventTimestamp]
       properties:
         type:
           type: string
           const: QRExpired
         reason:
           type: string
-          description: Present when MAX refused to confirm the scanned QR (the error text); absent when the QR ran out
+          description: |-
+            `login_expired`: MAX expired the QR after 10 new ones, the password
+            was not entered in 10 minutes, or MAX refused it too often or ended
+            the password step. `login_failed`: MAX refused the login, did not
+            answer it, or could not be reached again after the connection
+            dropped. `login_unsupported`: MAX asked for a step the gateway does
+            not support (see `step`).
+          enum: [login_expired, login_failed, login_unsupported]
+        step:
+          type: string
+          description: |-
+            With `login_unsupported`: what MAX asked for, as MAX names it (the
+            keys of its answer, e.g. `REGISTER`), or `password:<MAX's code>`
+            when MAX would not take the password from the gateway.
         userID:
           $ref: '#/components/schemas/EventUserID'
         instanceID:

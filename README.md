@@ -169,6 +169,23 @@ Webhook consumers can skip polling entirely: `QRGenerated` carries `qrLink` +
 `trackId`, `QRAuthorized` signals success, `Sync` fires once the full MAX
 session comes online (the proxy reconnects automatically after authorisation).
 
+An account with a **cloud password** (two factor authentication in the MAX
+app) is asked for it after the scan: `QRPasswordRequired` fires and
+`GET /session/qr` answers `409 password_required`. Send the password:
+
+```bash
+curl -X POST http://localhost:5555/session/password \
+  -H "token: USER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"password": "the cloud password"}'
+```
+
+`200 {"accepted": true}` means MAX took it; `QRAuthorized` and `Sync`
+follow. `422 invalid_password`: ask again (the fifth refusal ends the login).
+A login that ended answers `410` with its reason (`login_expired`,
+`login_failed`, `login_unsupported`) until the next connect; see API.md,
+"Login at a glance".
+
 ### 4. Send a Message
 
 ```bash
@@ -186,8 +203,9 @@ See [API.md](API.md) for the complete API documentation.
 
 #### Session
 - `POST /session/connect` - Open a session (starts QR flow if no auth token, else reconnects)
-- `GET /session/qr` - Get current QR code (base64 PNG) for an in-progress auth session
-- `POST /session/disconnect` - Disconnect / cancel in-progress QR session
+- `GET /session/qr` - Get current QR code (base64 PNG) for an in-progress auth session; `409`/`410` with a `code` otherwise
+- `POST /session/password` - Send the account's cloud password when MAX asks for it after the scan
+- `POST /session/disconnect` - Disconnect / stop a running QR login
 - `POST /session/logout` - End the MAX session and erase the login (the user stays)
 - `GET /session/status` - Connection / authentication status, the account's name and photo, account pause
 - `POST /session/resume` - Lift the pause MAX's limit/restriction errors put on the MAX account
@@ -259,8 +277,9 @@ See [API.md](API.md) for the complete API documentation.
 | `ReconnectExhausted` | Reconnect budget (`MAX_CONNECT_RETRIES`) exhausted; session stopped |
 | `QRGenerated` | New (or refreshed) QR code — payload carries `qrCodeBase64`, `qrLink`, `trackId`, `expiresAt` |
 | `QRScanned` | User scanned QR code in the mobile app |
+| `QRPasswordRequired` | MAX asks for the account's cloud password (`hint`, `email`); send it with `POST /session/password` |
 | `QRAuthorized` | Auth token received — proxy auto-starts the MAX session (`Sync` follows) |
-| `QRExpired` | QR refresh budget exhausted or session cancelled |
+| `QRExpired` | The QR login ended without a login; `reason` is `login_expired`, `login_failed` or `login_unsupported` (with `step`) |
 | `AuthExpired` | The session stopped and will not reconnect by itself; `reason` is `token_revoked`, `page_blocked`, `refresh_failed` (login kept) or `logged_out` (MAX ended the session; the user stays) |
 | `Paused` | The MAX account was paused; to every gateway user of it |
 | `Resumed` | The pause was lifted; to every gateway user of it |
@@ -305,7 +324,7 @@ curl http://localhost:5555/health
 {
     "success": true,
     "status": "ok",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "uptime_seconds": 12345,
     "db_ok": true,
     "rabbitmq_ok": true,

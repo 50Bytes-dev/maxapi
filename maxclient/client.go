@@ -34,7 +34,6 @@ const (
 	// Default timeouts
 	DefaultTimeout    = 30 * time.Second
 	WriteTimeout      = 10 * time.Second
-	PingInterval      = 30 * time.Second
 	ReconnectDelay    = 1 * time.Second
 	MaxReconnectDelay = 60 * time.Second
 
@@ -42,6 +41,18 @@ const (
 	MaxConsecutiveErrors = 10
 	CircuitBreakerReset  = 60 * time.Second
 )
+
+// PingInterval is how often a session pings MAX.
+const PingInterval = 30 * time.Second
+
+// pingInterval is PingInterval, which tests shorten (SetPingInterval).
+var pingInterval atomic.Int64
+
+func init() { pingInterval.Store(int64(PingInterval)) }
+
+// SetPingInterval sets how often clients started from now on ping MAX. For
+// tests.
+func SetPingInterval(d time.Duration) { pingInterval.Store(int64(d)) }
 
 // Client represents a MAX API client
 type Client struct {
@@ -74,8 +85,8 @@ type Client struct {
 	isConnected   bool
 	isConnectedMu sync.RWMutex
 
-	// Pending requests
-	pending   map[int]chan *Response
+	// Pending requests, by seq
+	pending   map[int]pendingRequest
 	pendingMu sync.RWMutex
 
 	// File upload waiters
@@ -94,9 +105,16 @@ type Client struct {
 	lastErrorTime    time.Time
 	circuitBreakerMu sync.Mutex
 
-	// Context for cancellation
+	// Context for cancellation: of the current connection. Close cancels
+	// it and Connect makes a new one, so a client may connect again.
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// life is cancelled once, by Shutdown, and never renewed: a shut down
+	// client never connects again (see Shutdown).
+	life       context.Context
+	lifeCancel context.CancelFunc
+	shut       atomic.Bool
 
 	// Logger
 	Logger zerolog.Logger
@@ -108,13 +126,16 @@ type Client struct {
 // NewClient creates a new MAX client
 func NewClient(deviceID string, logger zerolog.Logger) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
+	life, lifeCancel := context.WithCancel(context.Background())
 	return &Client{
 		DeviceID:    deviceID,
-		pending:     make(map[int]chan *Response),
+		pending:     make(map[int]pendingRequest),
 		fileWaiters: make(map[int64]chan *Response),
 		users:       make(map[int64]*User),
 		ctx:         ctx,
 		cancel:      cancel,
+		life:        life,
+		lifeCancel:  lifeCancel,
 		Logger:      logger,
 	}
 }
@@ -140,6 +161,9 @@ func (c *Client) setConnected(connected bool) {
 
 // Connect establishes a WebSocket connection to the MAX server
 func (c *Client) Connect() error {
+	if c.shut.Load() {
+		return ErrClientShutDown
+	}
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
@@ -176,12 +200,21 @@ func (c *Client) Connect() error {
 
 	header := http.Header{}
 	header.Set("Origin", WebSocketOrigin)
-	header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+	header.Set("User-Agent", WebUserAgent)
 
-	conn, _, err := dialer.Dial(uri, header)
+	// The dial ends at Shutdown: a client shut down while it dials never
+	// gets a connection.
+	conn, _, err := dialer.DialContext(c.life, uri, header)
 	if err != nil {
+		if c.shut.Load() {
+			return ErrClientShutDown
+		}
 		c.Logger.Error().Err(err).Msg("Failed to connect to WebSocket")
 		return err
+	}
+	if c.shut.Load() {
+		conn.Close()
+		return ErrClientShutDown
 	}
 
 	c.conn = conn
@@ -194,20 +227,22 @@ func (c *Client) Connect() error {
 
 	// Start receive loop
 	c.wg.Add(1)
-	go c.receiveLoop()
+	go c.receiveLoop(c.ctx)
 
 	c.Logger.Info().Msg("WebSocket connected")
 	return nil
 }
 
-// Close closes the client connection
+// Close closes the client connection and waits for its goroutines. The
+// client may Connect again afterwards. It must not run on the client's own
+// receive goroutine (an event handler): it would wait for itself. Shutdown
+// may.
 func (c *Client) Close() error {
 	c.Logger.Info().Msg("Closing client")
 
+	c.connMu.Lock()
 	c.cancel()
 	c.setConnected(false)
-
-	c.connMu.Lock()
 	if c.conn != nil {
 		err := c.conn.Close()
 		c.conn = nil
@@ -218,8 +253,8 @@ func (c *Client) Close() error {
 
 		// Clear pending requests
 		c.pendingMu.Lock()
-		for seq, ch := range c.pending {
-			close(ch)
+		for seq, p := range c.pending {
+			close(p.ch)
 			delete(c.pending, seq)
 		}
 		c.pendingMu.Unlock()
@@ -234,6 +269,41 @@ func (c *Client) Close() error {
 // Disconnect disconnects without clearing auth data
 func (c *Client) Disconnect() error {
 	return c.Close()
+}
+
+// Shutdown ends the client for good: the connection is closed, a dial in
+// progress is abandoned, requests waiting for an answer fail, and the ping
+// and receive goroutines end. Every later Connect answers ErrClientShutDown
+// and every request ErrNotConnected, so no frame reaches MAX once Shutdown
+// has returned. It never waits for the client's goroutines, so it is safe
+// anywhere, an event handler included, and more than once.
+func (c *Client) Shutdown() {
+	if c.shut.Swap(true) {
+		return
+	}
+	c.Logger.Info().Msg("Shutting the client down")
+	c.lifeCancel()
+
+	c.connMu.Lock()
+	c.cancel()
+	c.setConnected(false)
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+	}
+	c.connMu.Unlock()
+
+	c.pendingMu.Lock()
+	for seq, p := range c.pending {
+		close(p.ch)
+		delete(c.pending, seq)
+	}
+	c.pendingMu.Unlock()
+}
+
+// IsShutDown reports whether Shutdown was called.
+func (c *Client) IsShutDown() bool {
+	return c.shut.Load()
 }
 
 // nextSeq returns the next sequence number, wrapping back to 1 once MaxSeq is
@@ -268,7 +338,7 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 	// Create response channel
 	respCh := make(chan *Response, 1)
 	c.pendingMu.Lock()
-	c.pending[seq] = respCh
+	c.pending[seq] = pendingRequest{ch: respCh, opcode: int(opcode)}
 	c.pendingMu.Unlock()
 
 	defer func() {
@@ -310,6 +380,7 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 		c.connMu.RUnlock()
 		return nil, ErrNotConnected
 	}
+	connCtx := c.ctx
 	err = c.writeFrame(msgBytes)
 	c.connMu.RUnlock()
 
@@ -341,7 +412,9 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 		return resp, nil
 	case <-time.After(timeout):
 		return nil, ErrTimeout
-	case <-c.ctx.Done():
+	case <-connCtx.Done():
+		return nil, ErrNotConnected
+	case <-c.life.Done():
 		return nil, ErrNotConnected
 	}
 }
@@ -369,12 +442,12 @@ func (c *Client) writeFrame(data []byte) error {
 }
 
 // receiveLoop handles incoming WebSocket messages
-func (c *Client) receiveLoop() {
+func (c *Client) receiveLoop(ctx context.Context) {
 	defer c.wg.Done()
 
 	for {
 		select {
-		case <-c.ctx.Done():
+		case <-ctx.Done():
 			return
 		default:
 		}
@@ -390,7 +463,7 @@ func (c *Client) receiveLoop() {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			switch {
-			case isExpectedCloseErr(err, c.ctx):
+			case isExpectedCloseErr(err, ctx):
 				c.Logger.Debug().Err(err).Msg("WebSocket closed")
 			case websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway):
 				c.Logger.Info().Msg("WebSocket closed normally")
@@ -418,22 +491,37 @@ func (c *Client) receiveLoop() {
 			Int("opcode", resp.Opcode).
 			Msg("Received message")
 
-		// Check if this is a response to a pending request
-		c.pendingMu.RLock()
-		respCh, ok := c.pending[resp.Seq]
-		c.pendingMu.RUnlock()
-
-		if ok {
-			select {
-			case respCh <- &resp:
-			default:
-			}
-		} else {
-			// Handle notification
+		// A frame MAX sends of its own accord has cmd 0, an answer cmd 1 (or
+		// 3, an error) with the seq and opcode of the request. MAX numbers
+		// its own frames by a counter of its own, so a seq alone may be a
+		// pending request's: such a push used to be taken for the answer.
+		if resp.Cmd == cmdRequest {
 			c.handleNotification(&resp)
+			continue
+		}
+		c.pendingMu.RLock()
+		p, ok := c.pending[resp.Seq]
+		c.pendingMu.RUnlock()
+		if !ok || p.opcode != resp.Opcode {
+			c.Logger.Debug().Int("seq", resp.Seq).Int("opcode", resp.Opcode).Msg("An answer no request waits for")
+			continue
+		}
+		select {
+		case p.ch <- &resp:
+		default:
 		}
 	}
 }
+
+// pendingRequest is a request waiting for MAX's answer.
+type pendingRequest struct {
+	ch     chan *Response
+	opcode int
+}
+
+// cmdRequest is the cmd of a frame that asks: every request of the client,
+// and every frame MAX pushes. MAX answers with 1, or 3 for an error.
+const cmdRequest = 0
 
 // handleNotification handles server-initiated notifications
 func (c *Client) handleNotification(resp *Response) {
@@ -530,13 +618,13 @@ func payloadForLog(payload map[string]interface{}) string {
 }
 
 // maskTokens returns a copy of v in which the value under every key that
-// contains "token", in any case, is replaced by "***".
+// contains "token" or "password", in any case, is replaced by "***".
 func maskTokens(v interface{}) interface{} {
 	switch x := v.(type) {
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(x))
 		for k, val := range x {
-			if strings.Contains(strings.ToLower(k), "token") {
+			if lower := strings.ToLower(k); strings.Contains(lower, "token") || strings.Contains(lower, "password") {
 				out[k] = "***"
 			} else {
 				out[k] = maskTokens(val)
@@ -620,16 +708,22 @@ func (c *Client) unregisterFileWaiter(id int64) {
 
 // StartPingLoop starts the ping loop to keep connection alive
 func (c *Client) StartPingLoop() {
+	c.connMu.RLock()
+	ctx := c.ctx
+	c.connMu.RUnlock()
+	interval := time.Duration(pingInterval.Load())
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
 
-		ticker := time.NewTicker(PingInterval)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-c.ctx.Done():
+			case <-ctx.Done():
+				return
+			case <-c.life.Done():
 				return
 			case <-ticker.C:
 				if !c.IsConnected() {

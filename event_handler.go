@@ -442,7 +442,11 @@ func authExpiredReason(err error) string {
 // all cleanup itself (AuthExpired webhook, DB reset, manager purge) and
 // returns the original error so the caller can distinguish success without
 // having to repeat that bookkeeping.
-func (s *server) initClient(userID, authToken, deviceID, token string, subscriptions []string) (*maxclient.Client, *MyClient, map[string]interface{}, error) {
+//
+// A non-nil stopOn shuts the client down when it is done, until initClient
+// returns: a QR login passes its context, so a disconnect or a delete during
+// the login stops it.
+func (s *server) initClient(stopOn context.Context, userID, authToken, deviceID, token string, subscriptions []string) (*maxclient.Client, *MyClient, map[string]interface{}, error) {
 	log.Info().Str("userid", userID).Msg("Starting WebSocket connection to MAX")
 
 	if deviceID == "" {
@@ -452,8 +456,10 @@ func (s *server) initClient(userID, authToken, deviceID, token string, subscript
 		}
 	}
 
-	logger := log.With().Str("userID", userID).Logger()
-	client := maxclient.NewClient(deviceID, logger)
+	client := newMaxClient(userID, deviceID)
+	if stopOn != nil {
+		defer context.AfterFunc(stopOn, client.Shutdown)()
+	}
 	clientManager.SetMaxClient(userID, client)
 
 	mycli := &MyClient{
@@ -500,7 +506,7 @@ func (s *server) initClient(userID, authToken, deviceID, token string, subscript
 // auth_token is already available. It runs initClient, fires the initial Sync
 // webhook, then enters the supervised reconnect loop.
 func (s *server) startClient(userID string, authToken string, deviceID string, token string, subscriptions []string) {
-	client, mycli, _, err := s.initClient(userID, authToken, deviceID, token, subscriptions)
+	client, mycli, _, err := s.initClient(nil, userID, authToken, deviceID, token, subscriptions)
 	if err != nil {
 		return
 	}
@@ -756,11 +762,15 @@ func cleanupClient(userID string) {
 // endLogin erases userID's MAX login and stops its session, keeping the
 // gateway user: its token, webhook, subscription, settings and lookups. A
 // new login is a QR login through POST /session/connect. It may run on the
-// MaxClient's own receive goroutine (MAX's LoggedOut push), so it never
-// closes the client itself: the kill signal makes the user's loop goroutine
-// do it.
+// MaxClient's own receive goroutine (MAX's LoggedOut push): the client is
+// shut down, which never waits, and the kill signal ends the loop. The
+// socket is closed before the call returns, so a QR login started next never
+// runs beside it with the same device id.
 func (s *server) endLogin(userID string) {
 	clientManager.SendKill(userID)
+	if client := clientManager.GetMaxClient(userID); client != nil {
+		client.Shutdown()
+	}
 	if _, err := s.db.Exec("UPDATE users SET auth_token=NULL, connected=0 WHERE id=$1", userID); err != nil {
 		log.Error().Err(err).Str("userID", userID).Msg("Failed to erase the login")
 	}
@@ -769,21 +779,26 @@ func (s *server) endLogin(userID string) {
 
 // removeUser deletes gateway user userID: its row (its phone lookups go with
 // it; a pause of its MAX account stays, for the next gateway user logged into
-// it, see pauses.go), its running loop and clients, and its cached user info,
-// which is what lets its token in: without dropping it the deleted token went
-// on authenticating until a restart. The loop, clients and cache go even when
-// the row could not be deleted: the next request reads the row again. An
-// unknown userID is no error.
+// it, see pauses.go), its QR login, its running loop and clients, and its
+// cached user info, which is what lets its token in: without dropping it the
+// deleted token went on authenticating until a restart. The login, loop,
+// clients and cache go even when the row could not be deleted: the next
+// request reads the row again. An unknown userID is no error.
+//
+// Nothing of the user reaches MAX once it returns: the QR login is stopped
+// and waited for, and the session's client is shut down for good (no ping,
+// no reconnect). Its loop goroutine ends on the kill signal.
 func (s *server) removeUser(userID string) error {
 	token := s.tokenForUser(userID)
 	_, err := s.db.Exec("DELETE FROM users WHERE id=$1", userID)
 
-	// Non-blocking signal to any running loop goroutine, before cleanupClient
-	// drops the kill channel: a signal sent after it reaches no loop, which
-	// then goes on reconnecting with the deleted user's token. This may run
-	// on the MaxClient's own receive goroutine, so the client is never closed
-	// here: the kill signal makes the user's loop goroutine do it.
+	qrLogins.stop(userID)
+	// The kill signal goes before cleanupClient drops the kill channel: a
+	// signal sent after it reaches no loop.
 	clientManager.SendKill(userID)
+	if client := clientManager.GetMaxClient(userID); client != nil {
+		client.Shutdown()
+	}
 	cleanupClient(userID)
 	if token != "" {
 		userinfocache.Delete(token)

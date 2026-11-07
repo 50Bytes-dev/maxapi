@@ -49,9 +49,11 @@ type UserAgent struct {
 	DeviceLocale string     `json:"deviceLocale,omitempty"`
 	OsVersion    string     `json:"osVersion,omitempty"`
 	DeviceName   string     `json:"deviceName,omitempty"`
-	AppVersion   string     `json:"appVersion"`
-	Screen       string     `json:"screen,omitempty"`
-	Timezone     string     `json:"timezone,omitempty"`
+	// HeaderUserAgent is the browser's User-Agent, as the web client sends it.
+	HeaderUserAgent string `json:"headerUserAgent,omitempty"`
+	AppVersion      string `json:"appVersion"`
+	Screen          string `json:"screen,omitempty"`
+	Timezone        string `json:"timezone,omitempty"`
 }
 
 // Name represents a user's name

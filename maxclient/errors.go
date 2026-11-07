@@ -45,6 +45,9 @@ var (
 	ErrChatNotFound    = NewError("chat_not_found", "Chat not found", "Chat Error")
 	ErrUserNotFound    = NewError("user_not_found", "User not found", "User Error")
 	ErrMessageNotFound = NewError("message_not_found", "Message not found", "Message Error")
+	// ErrClientShutDown answers Connect on a client that was shut down
+	// (Client.Shutdown): it never connects again.
+	ErrClientShutDown = NewError("client_shut_down", "The client was shut down", "Connection Error")
 	// ErrFrameTooLarge is a request longer than one WebSocket frame of the
 	// client (wsWriteBufferSize): it was not sent.
 	ErrFrameTooLarge = NewError("frame_too_large", "The request is too long to send", "Request Error")

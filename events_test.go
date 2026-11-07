@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -65,9 +64,9 @@ func TestPausedAndResumedReachEveryUserOfTheAccount(t *testing.T) {
 // message's text goes to the log (M11).
 func TestMessageWorkOnlyForSubscribers(t *testing.T) {
 	t.Setenv("ALLOW_PRIVATE_IPS", "true")
-	var logs bytes.Buffer
+	logs := &lockedBuffer{}
 	old := log.Logger
-	log.Logger = zerolog.New(&logs).Level(zerolog.DebugLevel)
+	log.Logger = zerolog.New(logs).Level(zerolog.DebugLevel)
 	t.Cleanup(func() { log.Logger = old })
 
 	photos, fetched := serving(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("jpeg")) })

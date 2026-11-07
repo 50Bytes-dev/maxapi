@@ -1,5 +1,49 @@
 # maxapi 2.0.0 for Sadpos
 
+## 3.0.0 (2026-11-07): the QR login
+
+3.0.0 answers what Sadpos saw in production on 2026-11-07 (90 of 97 QR
+confirmations failed, orphan sessions after deletes, 500 on
+`GET /session/qr`). The contract is `API.md`, "What changed in 3.0.0" and
+"Login at a glance"; the research is
+`docs/research/max-qr-login-2026-11-07.md`. What Sadpos changes:
+
+- **Cloud password.** The failed confirmations were accounts with a cloud
+  password. Subscribe to `QRPasswordRequired` (fields `hint`, `email`); on it
+  (or on `GET /session/qr` `409 password_required`) show the owner a
+  password field and send it with `POST /session/password {"password"}`.
+  `200 accepted` → `QRAuthorized` and `Sync` follow; `422 invalid_password`
+  → ask again; `410` → the login ended. Never store or log the password.
+- **Codes instead of 500.** `GET /session/qr`: `409 already_logged_in`,
+  `409 password_required`, `410 login_expired` / `login_failed` /
+  `login_unsupported`. `QRExpired.reason` is the same code, always present;
+  `login_unsupported` names MAX's step in `step`: show it, it is the case to
+  report.
+- `POST /session/connect` without a login answers `503 not_connected` or
+  `503 login_unavailable` when no QR could be issued (was `500`).
+- A drop during the login shows a new QR by itself (`QRGenerated`): show the
+  latest one.
+- `DELETE /admin/users/{id}` and `POST /session/disconnect` now stop the
+  login and session for good; nothing else to do.
+- `GET /session/status` `connected` is `false` during a QR login.
+- After `AuthExpired` `logged_out` (MAX ended the session), `POST
+  /session/connect` starts a QR login again; in 2.0.0 it answered `500` "DB
+  error" and the shop could not log in again until its gateway user was
+  deleted and created anew.
+- An owner who sets a cloud password in the MAX app ends the gateway's
+  session (live, 2026-11-07): `AuthExpired` `logged_out`, then a QR login
+  with the password.
+
+Checked live on 2026-11-07 on the test account: QR login without and with a
+cloud password (a wrong one answered `422 invalid_password`, the right one
+logged in), a delete during the login (no socket left), the device shown as
+"WEB, Chrome, macOS".
+
+Pins: the image `sobytes/maxapi:3.0.0` and `maxapi-python` 6.0.0, at the
+commits of the release.
+
+The rest of this note is the 2.0.0 hand-off.
+
 > Hand-off of 2026-11-05 for the Sadpos agent: the plan
 > `../Sadpos/docs/plans/2026-11-03-1441-feat-messenger-chat-export-plan.md`
 > describes maxapi 1.5.1 in "Состояние шлюзов" and keeps R38 open for MAX.
