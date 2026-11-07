@@ -39,8 +39,13 @@ cloud password (a wrong one answered `422 invalid_password`, the right one
 logged in), a delete during the login (no socket left), the device shown as
 "WEB, Chrome, macOS".
 
-Pins: the image `sobytes/maxapi:3.0.0` and `maxapi-python` 6.0.0, at the
-commits of the release.
+Pins:
+
+| What | Pin |
+|---|---|
+| Image | `sobytes/maxapi:3.0.0` (linux/amd64), built from `eedfd8b` |
+| SDK | `maxapi-python` 6.0.0: `{ git = "https://github.com/50Bytes-dev/maxapi-python.git", rev = "200e822e40d37bb8dc47503e9a85fe1e9b33fd82" }` |
+| Schema | `/api/spec.yml` of the image (`info.version` 6.0.0) |
 
 The rest of this note is the 2.0.0 hand-off.
 
