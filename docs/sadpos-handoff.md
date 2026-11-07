@@ -43,7 +43,7 @@ Pins:
 
 | What | Pin |
 |---|---|
-| Image | `sobytes/maxapi:3.0.0` (linux/amd64), built from `eedfd8b` |
+| Image | `sobytes/maxapi:3.0.0` (linux/amd64, index digest `sha256:8981e366e8f689de60deb6956a9481f93c50c312902c59e84798d85973de19e8`), built from `eedfd8b` |
 | SDK | `maxapi-python` 6.0.0: `{ git = "https://github.com/50Bytes-dev/maxapi-python.git", rev = "200e822e40d37bb8dc47503e9a85fe1e9b33fd82" }` |
 | Schema | `/api/spec.yml` of the image (`info.version` 6.0.0) |
 
