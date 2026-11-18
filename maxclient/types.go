@@ -4,15 +4,6 @@ import (
 	"encoding/json"
 )
 
-// BaseMessage represents the base structure for all WebSocket messages
-type BaseMessage struct {
-	Ver     int             `json:"ver"`
-	Cmd     int             `json:"cmd"`
-	Seq     int             `json:"seq"`
-	Opcode  int             `json:"opcode"`
-	Payload json.RawMessage `json:"payload"`
-}
-
 // Response represents a parsed response from the server
 type Response struct {
 	Ver     int                    `json:"ver"`
@@ -21,10 +12,15 @@ type Response struct {
 	Opcode  int                    `json:"opcode"`
 	Payload map[string]interface{} `json:"payload"`
 
-	// RawPayload is the payload as MAX sent it. Payload holds its numbers as
+	// RawPayload is the payload as JSON, transcoded from the frame's
+	// MessagePack with every integer digit kept. Payload holds its numbers as
 	// float64, which loses ids above 2^53 (message ids are ~1.2e17): typed
 	// decoding reads RawPayload instead (decodePayload).
 	RawPayload json.RawMessage `json:"-"`
+
+	// decodeErr is set on an answer whose body could not be read: the
+	// request fails with it.
+	decodeErr error
 }
 
 // decodePayload decodes the response payload into v from the raw bytes, so
@@ -44,13 +40,15 @@ func (r *Response) decodePayload(v interface{}) error {
 
 // UserAgent represents user agent information for connection
 type UserAgent struct {
-	DeviceType   DeviceType `json:"deviceType"`
-	Locale       string     `json:"locale"`
-	DeviceLocale string     `json:"deviceLocale,omitempty"`
-	OsVersion    string     `json:"osVersion,omitempty"`
-	DeviceName   string     `json:"deviceName,omitempty"`
+	DeviceType     DeviceType `json:"deviceType"`
+	PushDeviceType string     `json:"pushDeviceType,omitempty"`
+	Locale         string     `json:"locale"`
+	DeviceLocale   string     `json:"deviceLocale,omitempty"`
+	OsVersion      string     `json:"osVersion,omitempty"`
+	DeviceName     string     `json:"deviceName,omitempty"`
 	// HeaderUserAgent is the browser's User-Agent, as the web client sends it.
 	HeaderUserAgent string `json:"headerUserAgent,omitempty"`
+	IsPwa           bool   `json:"isPwa"`
 	AppVersion      string `json:"appVersion"`
 	Screen          string `json:"screen,omitempty"`
 	Timezone        string `json:"timezone,omitempty"`

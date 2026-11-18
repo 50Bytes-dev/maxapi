@@ -17,12 +17,13 @@ import (
 )
 
 const (
-	// WebSocket endpoint
-	WebSocketURI    = "wss://ws-api.oneme.ru/websocket"
+	// WebSocket endpoint: the web client's since MAX switched JSON v11 on
+	// ws-api.oneme.ru off (2026-11-18). It speaks the binary v10 (codec.go).
+	WebSocketURI    = "wss://api.oneme.ru/websocket"
 	WebSocketOrigin = "https://web.max.ru"
 
-	// Protocol version for WebSocket
-	ProtocolVersion = 11
+	// ProtocolVersion is the ver of every frame: the binary protocol v10.
+	ProtocolVersion = 10
 
 	// MaxSeq is the largest sequence number MAX accepts. The server parses
 	// `seq` as a signed 16-bit integer: anything above 32767 makes it drop the
@@ -352,16 +353,7 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 	if err != nil {
 		return nil, err
 	}
-
-	msg := BaseMessage{
-		Ver:     ProtocolVersion,
-		Cmd:     0,
-		Seq:     seq,
-		Opcode:  int(opcode),
-		Payload: payloadBytes,
-	}
-
-	msgBytes, err := json.Marshal(msg)
+	msgBytes, err := EncodeFrame(cmdRequest, seq, int(opcode), payloadBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -394,6 +386,9 @@ func (c *Client) sendAndWaitWithTimeout(opcode Opcode, payload interface{}, time
 	case resp := <-respCh:
 		if resp == nil {
 			return nil, ErrNotConnected
+		}
+		if resp.decodeErr != nil {
+			return nil, resp.decodeErr
 		}
 
 		// Check for error in response
@@ -438,7 +433,42 @@ func (c *Client) writeFrame(data []byte) error {
 	if err := c.conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
 		return err
 	}
-	return c.conn.WriteMessage(websocket.TextMessage, data)
+	return c.conn.WriteMessage(websocket.BinaryMessage, data)
+}
+
+// answerPush answers a frame MAX pushed, as the web client does: a ping with
+// an empty answer, a new message with its chatId and messageId. The answer
+// carries the push's seq and opcode, cmd 1.
+func (c *Client) answerPush(resp *Response) {
+	var payload []byte
+	switch Opcode(resp.Opcode) {
+	case OpPing:
+	case OpNotifMessage:
+		var push struct {
+			ChatID  json.Number `json:"chatId"`
+			Message struct {
+				ID json.Number `json:"id"`
+			} `json:"message"`
+		}
+		if resp.decodePayload(&push) != nil || push.ChatID == "" || push.Message.ID == "" {
+			return
+		}
+		payload, _ = json.Marshal(map[string]json.Number{"chatId": push.ChatID, "messageId": push.Message.ID})
+	default:
+		return
+	}
+	frame, err := EncodeFrame(cmdAnswer, resp.Seq, resp.Opcode, payload)
+	if err != nil {
+		return
+	}
+	c.connMu.RLock()
+	defer c.connMu.RUnlock()
+	if c.conn == nil {
+		return
+	}
+	if err := c.writeFrame(frame); err != nil {
+		c.Logger.Warn().Err(err).Int("opcode", resp.Opcode).Msg("Failed to answer a push")
+	}
 }
 
 // receiveLoop handles incoming WebSocket messages
@@ -460,7 +490,7 @@ func (c *Client) receiveLoop(ctx context.Context) {
 			return
 		}
 
-		_, message, err := conn.ReadMessage()
+		kind, message, err := conn.ReadMessage()
 		if err != nil {
 			switch {
 			case isExpectedCloseErr(err, ctx):
@@ -474,17 +504,21 @@ func (c *Client) receiveLoop(ctx context.Context) {
 			return
 		}
 
-		var resp Response
-		if err := json.Unmarshal(message, &resp); err != nil {
-			c.Logger.Warn().Err(err).Msg("Failed to parse message")
+		if kind != websocket.BinaryMessage {
+			c.Logger.Warn().Int("kind", kind).Int("bytes", len(message)).Msg("A non-binary frame from MAX")
 			continue
 		}
-		var frame struct {
-			Payload json.RawMessage `json:"payload"`
+		decoded, err := DecodeFrame(message)
+		if err != nil {
+			c.Logger.Warn().Err(err).Msg("Failed to parse message")
+			// A body that cannot be read still names the request it answers:
+			// the request fails with the reason instead of waiting it out.
+			if decoded != nil && decoded.Cmd != cmdRequest {
+				c.failPending(decoded, err)
+			}
+			continue
 		}
-		if json.Unmarshal(message, &frame) == nil {
-			resp.RawPayload = frame.Payload
-		}
+		resp := *decoded
 
 		c.Logger.Debug().
 			Int("seq", resp.Seq).
@@ -496,6 +530,10 @@ func (c *Client) receiveLoop(ctx context.Context) {
 		// its own frames by a counter of its own, so a seq alone may be a
 		// pending request's: such a push used to be taken for the answer.
 		if resp.Cmd == cmdRequest {
+			c.answerPush(&resp)
+			if Opcode(resp.Opcode) == OpPing {
+				continue
+			}
 			c.handleNotification(&resp)
 			continue
 		}
@@ -510,6 +548,20 @@ func (c *Client) receiveLoop(ctx context.Context) {
 		case p.ch <- &resp:
 		default:
 		}
+	}
+}
+
+// failPending fails the request an unreadable answer was meant for.
+func (c *Client) failPending(header *Response, err error) {
+	c.pendingMu.RLock()
+	p, ok := c.pending[header.Seq]
+	c.pendingMu.RUnlock()
+	if !ok || p.opcode != header.Opcode {
+		return
+	}
+	select {
+	case p.ch <- &Response{Ver: header.Ver, Cmd: header.Cmd, Seq: header.Seq, Opcode: header.Opcode, decodeErr: err}:
+	default:
 	}
 }
 

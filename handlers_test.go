@@ -152,15 +152,11 @@ func newFakeMAX(t *testing.T, reply func(f fakeFrame) map[string]interface{}) *f
 			if err != nil {
 				return
 			}
-			var req maxclient.Response
-			if err := json.Unmarshal(data, &req); err != nil {
+			req, err := maxclient.DecodeFrame(data)
+			if err != nil {
 				return
 			}
-			var raw struct {
-				Payload json.RawMessage `json:"payload"`
-			}
-			_ = json.Unmarshal(data, &raw)
-			frame := fakeFrame{Opcode: req.Opcode, Payload: req.Payload, Raw: raw.Payload}
+			frame := fakeFrame{Opcode: req.Opcode, Payload: req.Payload, Raw: req.RawPayload}
 			f.mu.Lock()
 			f.frames = append(f.frames, frame)
 			f.mu.Unlock()
@@ -172,10 +168,9 @@ func newFakeMAX(t *testing.T, reply func(f fakeFrame) map[string]interface{}) *f
 			if payload == nil {
 				continue
 			}
-			resp, _ := json.Marshal(map[string]interface{}{
-				"ver": req.Ver, "cmd": 1, "seq": req.Seq, "opcode": req.Opcode, "payload": payload,
-			})
-			if err := conn.WriteMessage(websocket.TextMessage, resp); err != nil {
+			body, _ := json.Marshal(payload)
+			resp, _ := maxclient.EncodeFrame(1, req.Seq, req.Opcode, body)
+			if err := conn.WriteMessage(websocket.BinaryMessage, resp); err != nil {
 				return
 			}
 		}

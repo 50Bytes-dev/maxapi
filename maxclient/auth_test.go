@@ -45,21 +45,16 @@ func newScriptedServer(t *testing.T, answer func(req Response, raw json.RawMessa
 			if err != nil {
 				return
 			}
-			var req Response
-			if err := json.Unmarshal(data, &req); err != nil {
+			req, err := DecodeFrame(data)
+			if err != nil {
 				return
 			}
-			var raw struct {
-				Payload json.RawMessage `json:"payload"`
-			}
-			_ = json.Unmarshal(data, &raw)
 			s.mu.Lock()
-			s.requests = append(s.requests, req)
-			s.raws = append(s.raws, raw.Payload)
+			s.requests = append(s.requests, *req)
+			s.raws = append(s.raws, req.RawPayload)
 			s.mu.Unlock()
-			for _, frame := range s.answer(req, raw.Payload) {
-				out, _ := json.Marshal(frame)
-				if err := conn.WriteMessage(websocket.TextMessage, out); err != nil {
+			for _, frame := range s.answer(*req, req.RawPayload) {
+				if err := conn.WriteMessage(websocket.BinaryMessage, testFrame(frame)); err != nil {
 					return
 				}
 			}
@@ -213,9 +208,9 @@ func TestPasswordRefusal(t *testing.T) {
 func TestPushWithAPendingSeqIsNoAnswer(t *testing.T) {
 	srv := newScriptedServer(t, func(req Response, _ json.RawMessage) []map[string]interface{} {
 		return []map[string]interface{}{
-			{"ver": 11, "cmd": 0, "seq": req.Seq, "opcode": int(OpNotifMessage), "payload": map[string]interface{}{"chatId": 1}},
-			{"ver": 11, "cmd": 1, "seq": req.Seq, "opcode": int(OpAuthQRConfirm), "payload": map[string]interface{}{"unrelated": true}},
-			{"ver": 11, "cmd": 1, "seq": req.Seq, "opcode": req.Opcode, "payload": map[string]interface{}{
+			{"cmd": 0, "seq": req.Seq, "opcode": int(OpNotifMessage), "payload": map[string]interface{}{"chatId": 1}},
+			{"cmd": 1, "seq": req.Seq, "opcode": int(OpAuthQRConfirm), "payload": map[string]interface{}{"unrelated": true}},
+			{"cmd": 1, "seq": req.Seq, "opcode": req.Opcode, "payload": map[string]interface{}{
 				"tokenAttrs": map[string]interface{}{"LOGIN": map[string]interface{}{"token": "T3"}},
 			}},
 		}
@@ -302,7 +297,7 @@ func TestShutdownEndsTheClientForGood(t *testing.T) {
 // receive goroutine it runs on.
 func TestShutdownFromTheEventHandler(t *testing.T) {
 	srv := newScriptedServer(t, func(req Response, _ json.RawMessage) []map[string]interface{} {
-		return []map[string]interface{}{{"ver": 11, "cmd": 0, "seq": 1, "opcode": int(OpLogout), "payload": map[string]interface{}{}}}
+		return []map[string]interface{}{{"cmd": 0, "seq": 1, "opcode": int(OpLogout), "payload": map[string]interface{}{}}}
 	})
 	c := NewClient("test-device", zerolog.Nop())
 	c.URI = srv.uri

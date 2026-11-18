@@ -96,8 +96,8 @@ func TestLongRequestGoesAsOneFrame(t *testing.T) {
 	}()
 	select {
 	case h := <-heads:
-		if !h.fin || h.opcode != 1 || h.length < 8000 {
-			t.Fatalf("first frame: %+v, want a whole text frame of the request", h)
+		if !h.fin || h.opcode != 2 || h.length < 8000 {
+			t.Fatalf("first frame: %+v, want a whole binary frame of the request", h)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("the server got no frame")

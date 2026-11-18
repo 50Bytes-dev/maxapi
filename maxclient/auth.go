@@ -10,16 +10,19 @@ import (
 // and the WebSocket handshake's User-Agent tell the same browser. The fields
 // are those MAX's web client sends (PyMax, maxrs, max-account-api, max-cli,
 // 2026); before 3.0.0 only deviceType, locale and appVersion went, and the
-// handshake carried a truncated User-Agent.
+// handshake carried a truncated User-Agent. 3.0.1 follows web.max.ru
+// 26.11.9 (2026-11-18), the first on the binary v10, and adds pushDeviceType
+// and isPwa, which the web client sends too (max-cli's capture).
 const (
-	WebAppVersion = "26.8.4"
-	WebUserAgent  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+	WebAppVersion = "26.11.9"
+	WebUserAgent  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
 )
 
 // DefaultUserAgent is the userAgent of SESSION_INIT.
 func DefaultUserAgent() *UserAgent {
 	return &UserAgent{
 		DeviceType:      DeviceTypeWeb,
+		PushDeviceType:  "WEBPUSH",
 		Locale:          "ru",
 		DeviceLocale:    "ru",
 		OsVersion:       "macOS",

@@ -1,7 +1,6 @@
 package maxclient
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,14 +33,12 @@ func newEchoServer(t *testing.T) string {
 			if err != nil {
 				return
 			}
-			var req Response
-			if err := json.Unmarshal(data, &req); err != nil {
+			req, err := DecodeFrame(data)
+			if err != nil {
 				return
 			}
-			resp, _ := json.Marshal(map[string]interface{}{
-				"ver": req.Ver, "cmd": 1, "seq": req.Seq, "opcode": req.Opcode, "payload": map[string]interface{}{},
-			})
-			if err := conn.WriteMessage(websocket.TextMessage, resp); err != nil {
+			resp, _ := EncodeFrame(1, req.Seq, req.Opcode, nil)
+			if err := conn.WriteMessage(websocket.BinaryMessage, resp); err != nil {
 				return
 			}
 		}

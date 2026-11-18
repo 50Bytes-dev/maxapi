@@ -324,7 +324,7 @@ curl http://localhost:5555/health
 {
     "success": true,
     "status": "ok",
-    "version": "3.0.0",
+    "version": "3.0.1",
     "uptime_seconds": 12345,
     "db_ok": true,
     "rabbitmq_ok": true,

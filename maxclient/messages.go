@@ -2,6 +2,7 @@ package maxclient
 
 import (
 	"encoding/json"
+	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -178,11 +179,21 @@ func (c *Client) SendTyping(chatID int64) error {
 	return err
 }
 
+// wireMessageID is a message id the client keeps as a string, as it goes to
+// MAX: a number, as v10 types MAX's 64-bit ids. Anything that is not a whole
+// number goes as it is.
+func wireMessageID(id string) interface{} {
+	if _, err := strconv.ParseInt(id, 10, 64); err == nil {
+		return json.Number(id)
+	}
+	return id
+}
+
 // AddReaction adds a reaction to a message
 func (c *Client) AddReaction(chatID int64, messageID string, reaction string) (*ReactionInfo, error) {
 	payload := map[string]interface{}{
 		"chatId":    chatID,
-		"messageId": messageID,
+		"messageId": wireMessageID(messageID),
 		"reaction": map[string]interface{}{
 			"reactionType": "EMOJI",
 			"id":           reaction,
@@ -211,7 +222,7 @@ func (c *Client) AddReaction(chatID int64, messageID string, reaction string) (*
 func (c *Client) RemoveReaction(chatID int64, messageID string) (*ReactionInfo, error) {
 	payload := map[string]interface{}{
 		"chatId":    chatID,
-		"messageId": messageID,
+		"messageId": wireMessageID(messageID),
 	}
 
 	c.Logger.Info().Int64("chatId", chatID).Str("messageId", messageID).Msg("Removing reaction")
@@ -234,9 +245,13 @@ func (c *Client) RemoveReaction(chatID int64, messageID string) (*ReactionInfo, 
 
 // GetReactions gets reactions for messages
 func (c *Client) GetReactions(chatID int64, messageIDs []string) (map[string]*ReactionInfo, error) {
+	ids := make([]interface{}, len(messageIDs))
+	for i, id := range messageIDs {
+		ids[i] = wireMessageID(id)
+	}
 	payload := map[string]interface{}{
 		"chatId":     chatID,
-		"messageIds": messageIDs,
+		"messageIds": ids,
 	}
 
 	resp, err := c.sendAndWait(OpMsgGetReactions, payload)

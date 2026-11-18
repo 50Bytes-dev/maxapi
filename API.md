@@ -24,6 +24,7 @@ MAX itself are named where they occur. The same API is an OpenAPI 3.1 schema,
 from it. Where this document and the code disagree, the code is right and
 this document gets fixed.
 
+- [What changed in 3.0.1](#what-changed-in-301)
 - [What changed in 3.0.0](#what-changed-in-300)
 - [What changed in 2.0.0](#what-changed-in-200)
 - [Authentication](#authentication)
@@ -43,7 +44,30 @@ this document gets fixed.
 
 ---
 
-## What changed in 3.0.0
+## What changed in 3.0.1
+
+3.0.1 brings the gateway back after MAX switched off its JSON protocol. On
+2026-11-18 at 14:20:53 MSK MAX dropped every WebSocket at once (`close
+1006`); from 14:21 `wss://ws-api.oneme.ru/websocket` no longer answered
+(`dial tcp … i/o timeout`), every account showed no connection, and `POST
+/chat/send/text` and `POST /media/photo` answered `503`. MAX's web client
+(`appVersion` 26.11.9) speaks the binary protocol v10 on
+`wss://api.oneme.ru/websocket`, and so does the gateway now. The HTTP
+contract is unchanged; the Python SDK goes to `maxapi-python` 6.0.1 (schema
+`info.version` 6.0.1, no other change).
+
+| What | 3.0.0 | 3.0.1 | How to move |
+|---|---|---|---|
+| MAX endpoint | `wss://ws-api.oneme.ru/websocket`, JSON frames, protocol 11 | `wss://api.oneme.ru/websocket`, binary frames, protocol 10: a 10-byte header (`ver`, `cmd`, `seq` u16, opcode u16, compression u8, length u24), a MessagePack body, LZ4 when MAX compresses it | Update the image. Stored logins keep their token and device id: no new QR is needed (live: a stored login came up after a restart) |
+| The device MAX sees | `appVersion` 26.8.4, Chrome 147 | `appVersion` 26.11.9, Chrome 154, with `pushDeviceType` `WEBPUSH` and `isPwa` as the web client sends | — |
+| MAX's ping and new messages | not answered | answered as the web client does: a ping with an empty answer, a new message with its `chatId` and `messageId` | — |
+| Message ids from MAX | strings in MAX's JSON | 64-bit integers in v10; the gateway reads every integer past 2^53 as a string, so message ids in answers and in webhook `event` payloads stay strings with every digit, as in 3.0.0 | — |
+
+Checked live on 2026-11-18 on the test account: QR login with a cloud
+password, login with the stored token after a restart (no QR), the chat
+list, a text, a photo, history and delete for everyone
+(`docs/research/max-protocol-v10-2026-11-18.md`).
+
 
 3.0.0 fixes the QR login of 2.0.0. In 12 hours of production on 2026-11-07
 (Sadpos), 90 of 97 confirmations failed with `no_login_token`; a deleted or
@@ -1210,7 +1234,7 @@ GET /health
 ```
 
 ```json
-{ "success": true, "status": "ok", "version": "3.0.0", "uptime_seconds": 12345, "db_ok": true, "rabbitmq_ok": true, "connected_users": 42, "goroutines": 87, "mem_alloc_mb": 67, "timestamp": 1700000000 }
+{ "success": true, "status": "ok", "version": "3.0.1", "uptime_seconds": 12345, "db_ok": true, "rabbitmq_ok": true, "connected_users": 42, "goroutines": 87, "mem_alloc_mb": 67, "timestamp": 1700000000 }
 ```
 
 `503` with `"status": "degraded"` when the database does not answer. MAX is

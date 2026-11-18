@@ -29,12 +29,13 @@ func newAnsweringServer(t *testing.T, payload map[string]interface{}) string {
 			if err != nil {
 				return
 			}
-			var req Response
-			if err := json.Unmarshal(data, &req); err != nil {
+			req, err := DecodeFrame(data)
+			if err != nil {
 				return
 			}
-			resp, _ := json.Marshal(map[string]interface{}{"ver": req.Ver, "cmd": 1, "seq": req.Seq, "opcode": req.Opcode, "payload": payload})
-			if err := conn.WriteMessage(websocket.TextMessage, resp); err != nil {
+			body, _ := json.Marshal(payload)
+			resp, _ := EncodeFrame(1, req.Seq, req.Opcode, body)
+			if err := conn.WriteMessage(websocket.BinaryMessage, resp); err != nil {
 				return
 			}
 		}
