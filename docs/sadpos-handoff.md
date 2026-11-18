@@ -1,5 +1,31 @@
 # maxapi 2.0.0 for Sadpos
 
+## 3.0.1 (2026-11-18): MAX's binary protocol
+
+On 2026-11-18 at 14:20:53 MSK MAX switched off the JSON protocol the
+gateway spoke (`ws-api.oneme.ru`): every account lost its session, sends
+and photo uploads answered `503`. 3.0.1 speaks MAX's binary protocol v10
+on `api.oneme.ru`, as MAX's web client does now (`API.md`, "What changed
+in 3.0.1"; `docs/research/max-protocol-v10-2026-11-18.md`).
+
+What Sadpos does: **update the image** of `maxapi-server` from
+`sobytes/maxapi:3.0.0` to `3.0.1` and restart it. Nothing else: the HTTP
+API, codes and webhooks are those of 3.0.0, message ids stay strings, the
+stored logins come up without a QR (checked live: a stored login after a
+restart). The sends that waited for the gateway can go once `GET
+/session/status` shows `connected`. The SDK pin may stay at 6.0.0 (6.0.1
+changes only the version).
+
+Checked live on 2026-11-18 on the test account: QR login with the cloud
+password, login with the stored token, the chat list, a text, a photo,
+history, delete for everyone.
+
+| What | Pin |
+|---|---|
+| Image | `sobytes/maxapi:3.0.1` (linux/amd64, index digest `sha256:313e9c6cf177b4958601dd796d96341a3f5ec3351b33e2746420928abd92ee15`), built from `7168d56` |
+| SDK | `maxapi-python` 6.0.1: `{ git = "https://github.com/50Bytes-dev/maxapi-python.git", rev = "aab44ee356d35a7ceddab6604f912c5d71971546" }` |
+| Schema | `/api/spec.yml` of the image (`info.version` 6.0.1) |
+
 ## 3.0.0 (2026-11-07): the QR login
 
 3.0.0 answers what Sadpos saw in production on 2026-11-07 (90 of 97 QR
